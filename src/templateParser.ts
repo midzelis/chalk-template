@@ -12,28 +12,26 @@ export interface ChalkTemplate {
 	body: ChalkTemplateBodyNode[];
 }
 
-export interface EscapeMeNode {
-	type: 'escapeme';
-	value: string;
-}
 export interface TextNode {
 	type: 'text';
 	value: string;
 }
 
-export type AstNode = TemplateNode | ChalkTemplate | EscapeMeNode | TextNode;
+export type AstNode = TemplateNode | ChalkTemplate | TextNode;
 
-export type ChalkTemplateBodyNode = ChalkTemplate | EscapeMeNode | TextNode;
+export type ChalkTemplateBodyNode = ChalkTemplate | TextNode;
 
-export interface TextStyle {
+export interface Keyed {
+	key: string;
+}
+export interface TextStyle extends Keyed {
 	type: 'textstyle';
 	invert: boolean;
 	value: string;
-	key: string;
 }
-export interface RgbStyle {
+export interface RgbStyle extends Keyed {
 	type: 'rgbstyle';
-	key: string;
+	invert: boolean;
 	rgb?: RGB;
 	bgRgb?: RGB;
 }
@@ -42,15 +40,31 @@ export interface RGB {
 	green: number;
 	blue: number;
 }
-export interface HexStyle {
+export interface HexStyle extends Keyed {
 	type: 'hexstyle';
-	key: string;
+	invert: boolean;
 	fghex?: string;
 	bghex?: string;
 }
+
 export type Style = TextStyle | RgbStyle | HexStyle;
 
-const prefix = '{';
+function addKey<Type>(object: Type | undefined): (Type & Keyed) | undefined {
+	if (object) {
+		// filter out invert
+		const key = JSON.stringify(object, (key, value) =>
+			key === 'invert' ? undefined : value
+		);
+		Object.defineProperty(object, 'key', {
+			get: () => key,
+		});
+		return <Type & Keyed>object;
+	}
+	return <Type & Keyed>object;
+}
+
+const startTemplate = '{';
+const endTemplate = '}';
 
 export function parse(
 	chalk: ChalkInstance,
@@ -74,28 +88,23 @@ export function parse(
 		};
 	}
 
-	function parseNode(): ChalkTemplate | EscapeMeNode | TextNode | undefined {
-		return parseChalkTemplate() ?? parseEscapeme() ?? parseText();
+	function parseNode(): ChalkTemplate | TextNode | undefined {
+		return parseChalkTemplate() ?? parseText();
 	}
 
 	function parseChalkTemplate(): ChalkTemplate | undefined {
 		const original = position;
 		let body: ChalkTemplateBodyNode[] = [];
 		let style: Style[] | undefined;
-		if (consume(prefix)) {
+		if (consume(startTemplate)) {
 			style = parseStyles();
 			if (!style) return reset(original);
-			let ended = false;
 			for (;;) {
 				const node = parseNode();
-				if (node && node.type === 'escapeme' && node.value === '}') {
-					ended = true;
-					break;
-				}
 				if (!node) break;
 				body.push(node);
 			}
-			if (!ended && !consume('}')) return reset(original);
+			if (!consume(endTemplate)) return reset(original);
 			return {
 				type: 'chalktemplate',
 				style,
@@ -105,30 +114,19 @@ export function parse(
 		return undefined;
 	}
 
-	function parseEscapeme(): EscapeMeNode | undefined {
-		const escapeNode = (value: string): EscapeMeNode => {
-			return { type: 'escapeme', value };
-		};
-		if (consume('{')) return escapeNode('{');
-		else if (consume('}')) return escapeNode('}');
-		else if (consume('\\')) return escapeNode('\\');
-		return undefined;
-	}
-
 	function parseText(): TextNode {
 		const textmatcher = () => {
 			let match = '';
 			return (char: string) => {
-				if ((match + char).endsWith(prefix))
+				const matchesStart = () => (match + char).endsWith(startTemplate);
+				const matchesEnd = () => (match + char).endsWith(endTemplate);
+				if (matchesStart() || matchesEnd())
 					return {
 						kind: 'reject',
-						amount: prefix.length - 1,
+						amount: startTemplate.length - 1,
 					};
-				if (/[^{}\\]/.test(char)) {
-					match += char;
-					return true;
-				}
-				return false;
+				match += char;
+				return true;
 			};
 		};
 		const value = consumeWhile(textmatcher());
@@ -144,11 +142,12 @@ export function parse(
 		const original = position;
 		const styles: Style[] = [];
 		for (;;) {
+			const invert = consume('~');
 			const style =
-				parseHexStyle() ??
-				parseRgbStyle('rgb') ??
-				parseRgbStyle('bgRgb') ??
-				parseTextStyle();
+				parseHexStyle(invert) ??
+				parseRgbStyle(invert, 'rgb') ??
+				parseRgbStyle(invert, 'bgRgb') ??
+				parseTextStyle(invert);
 			if (!style) break;
 			styles.push(style);
 			if (!consume('.')) break;
@@ -164,7 +163,7 @@ export function parse(
 		return styles;
 	}
 
-	function parseHexStyle(): HexStyle | undefined {
+	function parseHexStyle(invert: boolean): HexStyle | undefined {
 		const original = position;
 		const hash = consume('#');
 		if (hash) {
@@ -177,16 +176,19 @@ export function parse(
 				// no seperator, that means there must be a foreground value
 				if (!fghex) return reset(original);
 			}
-			return {
+			return addKey({
 				type: 'hexstyle',
+				invert,
 				fghex,
 				bghex,
-				key: `fghex:${fghex}:bghex:${bghex}`
-			};
+			});
 		}
 		return undefined;
 	}
-	function parseRgbStyle(kind: 'rgb' | 'bgRgb'): RgbStyle | undefined {
+	function parseRgbStyle(
+		invert: boolean,
+		kind: 'rgb' | 'bgRgb'
+	): RgbStyle | undefined {
 		const original = position;
 		const rgb = consume(kind);
 		if (rgb) {
@@ -209,31 +211,29 @@ export function parse(
 			consumeWhitespace();
 			const rparen = consume(')');
 			if (!rparen) reset(original);
-			return {
+			return addKey({
 				type: 'rgbstyle',
+				invert,
 				[kind]: {
 					red,
 					green,
 					blue,
 				},
-				key: `rgb:${kind}:${red}:${green}:${blue}`
-			};
+			});
 		}
 		return undefined;
 	}
 
-	function parseTextStyle(): TextStyle | undefined {
+	function parseTextStyle(invert: boolean): TextStyle | undefined {
 		const original = position;
-		const invert = consume('~');
-		const style = consumeWhile((char) => /[^\s#\\.]/.test(char));
+		const style = consumeWhile((char) => /[^\s\\.]/.test(char));
 		if (!style) return reset(original);
 		if (!chalk[style]) return reset(original);
-		return {
+		return addKey({
 			type: 'textstyle',
-			invert: !!invert,
+			invert,
 			value: style,
-			key: `text:${style}`
-		};
+		});
 	}
 
 	function consumeNextWhitespace() {

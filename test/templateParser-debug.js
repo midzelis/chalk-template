@@ -1,4 +1,5 @@
-import { chalkTemplateRenderer } from "../dist/index.js";
+#!/usr/bin/env ts-node
+import { chalkTemplateRenderer } from "../src/index.ts";
 import { Chalk } from "chalk";
 import util  from "node:util";
 

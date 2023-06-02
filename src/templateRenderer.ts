@@ -31,13 +31,13 @@ export function renderChalk(chalk: ChalkInstance, node: AstNode): string {
 	let styles = new Map<String, Style>();
 	function visitor(current: AstNode) {
 		if (current.type === 'template') return current.nodes.map(visitor).join('');
-		else if (current.type === 'escapeme') return current.value;
 		else if (current.type === 'text') return current.value;
 		else if (current.type === 'chalktemplate') {
 			const prevStyles = new Map<String, Style>(styles);
 
 			for (const style of current.style) {
 				const { type, key } = style;
+				debugger;
 				if (type === 'textstyle') {
 					const { invert } = style;
 					if (invert && styles.has(key)) {
