@@ -1,5 +1,17 @@
 import type { ChalkInstance } from 'chalk';
-import type { AstNode, Style } from './templateParser.js';
+import type { AstNode, Style, Template } from './templateParser.js';
+
+function unescape(string: string, startTag = '{', endTag = '}') {
+	// return string.replaceAll(new RegExp(`(${startTag}|${endTag}){2}`, 'g'), '$1');
+	// return string.replaceAll(new RegExp(`\\{2}`, 'g'), '\\');
+	let result = '';
+	for (let i=0; i<string.length; i++) {
+		const char = string[i]
+		if (char === '\\') result+=string[++i]
+		else result += char
+	}
+	return result;
+}
 
 function configChalk(chalk: ChalkInstance, styles: Map<String, Style>) {
 	let currentChalk = chalk;
@@ -27,34 +39,49 @@ function configChalk(chalk: ChalkInstance, styles: Map<String, Style>) {
 	return currentChalk;
 }
 
-export function renderChalk(chalk: ChalkInstance, node: AstNode): string {
+export function renderChalk(chalk: ChalkInstance, node: Template): string {
 	let styles = new Map<String, Style>();
 	function visitor(current: AstNode) {
 		if (current.type === 'template') return current.nodes.map(visitor).join('');
 		else if (current.type === 'text') return current.value;
-		else if (current.type === 'chalktemplate') {
+		else if (current.type === 'escapedstyletag')
+			return '{' + current.value + '}';
+		else if (current.type === 'styletag') {
+			debugger;
 			const prevStyles = new Map<String, Style>(styles);
 
 			for (const style of current.style) {
-				const { type, key } = style;
-				debugger;
-				if (type === 'textstyle') {
-					const { invert } = style;
-					if (invert && styles.has(key)) {
-						styles.delete(key);
-						break;
-					}
+				const { key } = style;
+				const { invert } = style;
+				if (invert && styles.has(key)) {
+					styles.delete(key);
+					break;
 				}
 				styles.set(key, style);
 			}
 			let result = '';
-			for (const node of current.body) {
-				if (node.type === 'chalktemplate') {
-					result += visitor(node);
-				} else {
-					result += configChalk(chalk, styles)(node.value);
+
+			debugger;
+			let run = '';
+			function renderRun() {
+				if (run.length > 0) {
+					// process the style run
+					const configured = configChalk(chalk, styles);
+					if (configured) {
+						result += configured(run);
+						run = '';
+					}
 				}
 			}
+			for (const node of current.children) {
+				if (node.type === 'text' || node.type === 'escapedstyletag') {
+					run += unescape(visitor(node));
+				} else {
+					renderRun()
+					result += visitor(node);
+				}
+			}
+			renderRun();
 			styles = prevStyles;
 			return result;
 		}

@@ -1,25 +1,29 @@
-import type { ChalkInstance } from 'chalk';
-
-export interface TemplateNode {
+export interface Template {
 	type: 'template';
 	nodes: AstNode[];
 	templateString: string;
+	startTag: string;
+	endTag: string;
 }
 
-export interface ChalkTemplate {
-	type: 'chalktemplate';
+export interface StyleTag {
+	type: 'styletag';
 	style: Style[];
-	body: ChalkTemplateBodyNode[];
+	children: StyleTagChild[];
+}
+export interface EscapedStyleTag {
+	type: 'escapedstyletag';
+	value: string;
 }
 
-export interface TextNode {
+export interface Text {
 	type: 'text';
 	value: string;
 }
 
-export type AstNode = TemplateNode | ChalkTemplate | TextNode;
+export type AstNode = Template | StyleTag | EscapedStyleTag | Text;
 
-export type ChalkTemplateBodyNode = ChalkTemplate | TextNode;
+export type StyleTagChild = StyleTag | EscapedStyleTag | Text;
 
 export interface Keyed {
 	key: string;
@@ -49,87 +53,149 @@ export interface HexStyle extends Keyed {
 
 export type Style = TextStyle | RgbStyle | HexStyle;
 
-function addKey<Type>(object: Type | undefined): (Type & Keyed) | undefined {
-	if (object) {
-		// filter out invert
-		const key = JSON.stringify(object, (key, value) =>
-			key === 'invert' ? undefined : value
-		);
-		Object.defineProperty(object, 'key', {
-			get: () => key,
-		});
-		return <Type & Keyed>object;
-	}
-	return <Type & Keyed>object;
+type ConsumeWhileFunction = (
+	char: string
+) => boolean | { kind: string; positionOffset?: number; valueOffset?: number };
+
+function addKey<Type>(object: Type | undefined): Type & Keyed | undefined {
+	if (object === undefined) return undefined;
+	// filter out invert
+	const key = JSON.stringify(object, (key, value) =>
+		key === 'invert' ? undefined : value
+	);
+	const ret = {
+		...object,
+		key,
+	};
+	Object.defineProperty(ret, 'key', {
+		enumerable: false,
+		value: key
+	});
+	return ret;
 }
 
-const startTemplate = '{';
-const endTemplate = '}';
+type Options = {
+	startTag?: string,
+	endTag?: string
+}
 
 export function parse(
-	chalk: ChalkInstance,
-	templateString: string
-): TemplateNode {
-	let position = 0;
+	options: Options = {},
+	templateString: string,
+	temp: TemplateStringsArray,
+	...args: any[]
+): Template {
+	const { startTag = '{', endTag = '}'} = options;
 
+	const parts = []
+	debugger;
+	parts.push([...temp[0]] );
+
+	for (let index = 1; index < temp.length; index++) {
+		parts.push( [...args[index-1]] )
+		parts.push( [...`${args[index]}`] )
+	}
+
+
+	let position = 0;
 	return parseTemplate();
 
-	function parseTemplate(): TemplateNode {
+	function parseTemplate(): Template {
 		const nodes: AstNode[] = [];
 		for (;;) {
 			const node = parseNode();
 			if (!node) break;
 			nodes.push(node);
 		}
+		if (position != templateString.length)
+			nodes.push({
+				type: 'text',
+				value: templateString.substring(position, templateString.length),
+			});
 		return {
 			type: 'template',
 			nodes,
 			templateString,
+			startTag,
+			endTag,
 		};
 	}
 
-	function parseNode(): ChalkTemplate | TextNode | undefined {
-		return parseChalkTemplate() ?? parseText();
+	function parseNode(): StyleTag | EscapedStyleTag | Text | undefined {
+		// directly check for escaped here
+		return  parseChalkTemplate() ?? parseText();
 	}
 
-	function parseChalkTemplate(): ChalkTemplate | undefined {
+	function parseChalkTemplate(): StyleTag | undefined {
 		const original = position;
-		let body: ChalkTemplateBodyNode[] = [];
+		let body: StyleTagChild[] = [];
 		let style: Style[] | undefined;
-		if (consume(startTemplate)) {
+		if (consume(startTag)) {
 			style = parseStyles();
 			if (!style) return reset(original);
 			for (;;) {
+				debugger;
 				const node = parseNode();
 				if (!node) break;
 				body.push(node);
 			}
-			if (!consume(endTemplate)) return reset(original);
+			if (!consume(endTag)) return reset(original);
 			return {
-				type: 'chalktemplate',
+				type: 'styletag',
 				style,
-				body,
+				children: body,
 			};
 		}
 		return undefined;
 	}
 
-	function parseText(): TextNode {
-		const textmatcher = () => {
+	// function parseEscapedStyleTag(): EscapedStyleTag | undefined {
+	// 	const original = position;
+	// 	const doubleStart = startTag + startTag;
+	// 	if (!consume(doubleStart)) return reset(original);
+	// 	// read until a double end tag
+	// 	const untilDoubleEndTagInclusive = () => {
+	// 		let match = '';
+	// 		return (char: string) => {
+	// 			const backtrack = match + char;
+	// 			if (backtrack.endsWith(endTag + endTag))
+	// 				return {
+	// 					kind: 'stop',
+	// 					positionOffset: 1,
+	// 					valueOffset: -doubleStart.length,
+	// 				};
+	// 			match += char;
+	// 			return true;
+	// 		};
+	// 	};
+	// 	const value = consumeWhile(untilDoubleEndTagInclusive());
+	// 	if (!value) return undefined;
+	// 	return {
+	// 		type: 'escapedstyletag',
+	// 		value,
+	// 	};
+	// }
+
+	function parseText(): Text {
+		const untilStartOrEndTagExclusive = () => {
 			let match = '';
 			return (char: string) => {
-				const matchesStart = () => (match + char).endsWith(startTemplate);
-				const matchesEnd = () => (match + char).endsWith(endTemplate);
-				if (matchesStart() || matchesEnd())
+				const backtrack = match + char;
+				if (backtrack.endsWith(startTag))
 					return {
-						kind: 'reject',
-						amount: startTemplate.length - 1,
+						kind: 'stop',
+						positionOffset: -(startTag.length - 1),
+					};
+				else if (backtrack.endsWith(endTag))
+					return {
+						kind: 'stop',
+						positionOffset: -(endTag.length - 1),
 					};
 				match += char;
 				return true;
 			};
 		};
-		const value = consumeWhile(textmatcher());
+		const value = consumeWhile(untilStartOrEndTagExclusive());
 		if (value === undefined) return undefined;
 
 		return {
@@ -228,7 +294,6 @@ export function parse(
 		const original = position;
 		const style = consumeWhile((char) => /[^\s\\.]/.test(char));
 		if (!style) return reset(original);
-		if (!chalk[style]) return reset(original);
 		return addKey({
 			type: 'textstyle',
 			invert,
@@ -249,32 +314,50 @@ export function parse(
 	}
 
 	function consume(segment: string): boolean | undefined {
+		let escaped = 0;
+		let prev = null;
 		for (let j = 0; j < segment.length; j++) {
-			if (templateString[position + j] !== segment[j]) {
+			const char = templateString[position+j];
+			if (char === '\\') {
+				if (prev !== '\\') {
+					return undefined;
+				} 
+			}
+			if (char !== segment[j]) {
 				return undefined;
 			}
+			prev = char;
 		}
-		position += segment.length;
+		position += segment.length + escaped;
 		return true;
 	}
 
-	function consumeWhile(
-		fn: (char: string) => boolean | { kind: string; amount: number }
-	): string | undefined {
+	function consumeWhile(fn: ConsumeWhileFunction): string | undefined {
 		let newIndex = position;
-		let adjust = 0;
+		let valueOffset = 0;
+		let prev = null;
 		while (templateString[newIndex] != null) {
-			const action = fn(templateString[newIndex]);
+			const char = templateString[newIndex];
+			if (char === '\\') {
+				if (prev !== '\\') {
+					prev = char;
+					newIndex++
+					continue;
+				}
+			}
+			const action = prev === '\\' || fn(char);
 			if (action === true) newIndex++;
 			else if (action === false) break;
-			else if (action.kind === 'reject') {
-				adjust = -action.amount;
+			else if (action.kind === 'stop') {
+				newIndex += action.positionOffset || 0;
+				valueOffset += action.valueOffset || 0;
 				break;
 			}
+			prev = char;
 		}
 		if (newIndex > position) {
-			const result = templateString.substring(position, newIndex + adjust);
-			position = newIndex + adjust;
+			const result = templateString.substring(position, newIndex + valueOffset);
+			position = newIndex;
 			return result;
 		}
 		return undefined;
@@ -286,10 +369,32 @@ export function parse(
 	}
 
 	function consumeNumber() {
-		return consumeWhile((char) => /\d/.test(char));
+		return consumeWhile(isDigit);
 	}
 
 	function consumeWhitespace() {
-		consumeWhile((char) => /\s/.test(char));
+		consumeWhile(isWhitespace);
+	}
+	function isWhitespace(char: string) {
+		// prettier-ignore
+		return char === ' '
+			|| char === '\n'
+			|| char === '\t'
+			|| char === '\r'
+			|| char === '\f'
+			|| char === '\v'
+			|| char === '\u00a0'
+			|| char === '\u1680'
+			|| char === '\u2000'
+			|| char === '\u200a'
+			|| char === '\u2028'
+			|| char === '\u2029'
+			|| char === '\u202f'
+			|| char === '\u205f'
+			|| char === '\u3000'
+			|| char === '\ufeff'
+	}
+	function isDigit(char: string) {
+		return char >= '0' && char <= '9';
 	}
 }

@@ -5,6 +5,7 @@
 		"declaration": true,
 		"target": "ES6",
 		"outDir": "dist",
-		"rootDir": "src"
+		"rootDir": "src",
+		"lib": ["ES2021.String"]
 	}
 }
