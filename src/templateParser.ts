@@ -47,8 +47,8 @@ export interface RGB {
 export interface HexStyle extends Keyed {
 	type: 'hexstyle';
 	invert: boolean;
-	fghex?: string;
-	bghex?: string;
+	fghex: string | false;
+	bghex: string | false;
 }
 
 export type Style = TextStyle | RgbStyle | HexStyle;
@@ -57,7 +57,7 @@ type ConsumeWhileFunction = (
 	char: string
 ) => boolean | { kind: string; positionOffset?: number; valueOffset?: number };
 
-function addKey<Type>(object: Type | undefined): Type & Keyed | undefined {
+function addKey<Type>(object: Type | undefined): (Type & Keyed) | undefined {
 	if (object === undefined) return undefined;
 	// filter out invert
 	const key = JSON.stringify(object, (key, value) =>
@@ -69,35 +69,69 @@ function addKey<Type>(object: Type | undefined): Type & Keyed | undefined {
 	};
 	Object.defineProperty(ret, 'key', {
 		enumerable: false,
-		value: key
+		value: key,
 	});
 	return ret;
 }
 
 type Options = {
-	startTag?: string,
-	endTag?: string
-}
+	startTag?: string;
+	endTag?: string;
+};
 
+type Position = {
+	part: number;
+	partpos: number;
+};
 export function parse(
 	options: Options = {},
 	templateString: string,
 	temp: TemplateStringsArray,
 	...args: any[]
 ): Template {
-	const { startTag = '{', endTag = '}'} = options;
+	const { startTag = '{', endTag = '}' } = options;
 
-	const parts = []
-	debugger;
-	parts.push([...temp[0]] );
-
+	const parts: string[][] = [];
+	parts.push([...temp[0]]);
 	for (let index = 1; index < temp.length; index++) {
-		parts.push( [...args[index-1]] )
-		parts.push( [...`${args[index]}`] )
+		parts.push([...args[index - 1]]);
+		parts.push([...temp[index]]);
 	}
 
+	let part = 0;
+	let partpos = 0;
 
-	let position = 0;
+	function savepos(): Position {
+		return {
+			part,
+			partpos,
+		};
+	}
+	function nextChar() {
+		adjustPos(1);
+		return char();
+	}
+	function adjustPos(amount: number): undefined {
+		if (partpos+amount < parts[part].length) {
+			if (partpos + amount < 0) {
+				
+			} else {
+				partpos+=amount
+			}
+		}
+		return undefined;
+	}
+	function char() {
+		return parts[part][partpos]
+	}
+	function remainder() {
+		let chars = [];
+		chars.push(...parts[part].slice(partpos));
+		for (let i = part; i < parts.length; i++) {
+			chars.push(...parts[i]);
+		}
+		return chars.reduce((prev, curr) => prev + curr);
+	}
 	return parseTemplate();
 
 	function parseTemplate(): Template {
@@ -107,10 +141,10 @@ export function parse(
 			if (!node) break;
 			nodes.push(node);
 		}
-		if (position != templateString.length)
+		if (part != parts.length - 1 && partpos != parts[parts.length - 1].length)
 			nodes.push({
 				type: 'text',
-				value: templateString.substring(position, templateString.length),
+				value: remainder(),
 			});
 		return {
 			type: 'template',
@@ -121,15 +155,15 @@ export function parse(
 		};
 	}
 
-	function parseNode(): StyleTag | EscapedStyleTag | Text | undefined {
+	function parseNode(): StyleTag | EscapedStyleTag | Text | false {
 		// directly check for escaped here
-		return  parseChalkTemplate() ?? parseText();
+		return parseChalkTemplate() ?? parseText();
 	}
 
-	function parseChalkTemplate(): StyleTag | undefined {
-		const original = position;
+	function parseChalkTemplate(): StyleTag | false {
+		const original = savepos();
 		let body: StyleTagChild[] = [];
-		let style: Style[] | undefined;
+		let style: Style[] | false;
 		if (consume(startTag)) {
 			style = parseStyles();
 			if (!style) return reset(original);
@@ -149,34 +183,7 @@ export function parse(
 		return undefined;
 	}
 
-	// function parseEscapedStyleTag(): EscapedStyleTag | undefined {
-	// 	const original = position;
-	// 	const doubleStart = startTag + startTag;
-	// 	if (!consume(doubleStart)) return reset(original);
-	// 	// read until a double end tag
-	// 	const untilDoubleEndTagInclusive = () => {
-	// 		let match = '';
-	// 		return (char: string) => {
-	// 			const backtrack = match + char;
-	// 			if (backtrack.endsWith(endTag + endTag))
-	// 				return {
-	// 					kind: 'stop',
-	// 					positionOffset: 1,
-	// 					valueOffset: -doubleStart.length,
-	// 				};
-	// 			match += char;
-	// 			return true;
-	// 		};
-	// 	};
-	// 	const value = consumeWhile(untilDoubleEndTagInclusive());
-	// 	if (!value) return undefined;
-	// 	return {
-	// 		type: 'escapedstyletag',
-	// 		value,
-	// 	};
-	// }
-
-	function parseText(): Text {
+	function parseText(): Text | false {
 		const untilStartOrEndTagExclusive = () => {
 			let match = '';
 			return (char: string) => {
@@ -196,7 +203,7 @@ export function parse(
 			};
 		};
 		const value = consumeWhile(untilStartOrEndTagExclusive());
-		if (value === undefined) return undefined;
+		if (value === false) return value
 
 		return {
 			type: 'text',
@@ -204,8 +211,8 @@ export function parse(
 		};
 	}
 
-	function parseStyles(): Style[] | undefined {
-		const original = position;
+	function parseStyles(): Style[] | false {
+		const original = savepos();
 		const styles: Style[] = [];
 		for (;;) {
 			const invert = consume('~');
@@ -223,24 +230,24 @@ export function parse(
 		const nextSpace = consumeNextWhitespace();
 		if (!nextSpace) return reset(original);
 		if (nextSpace !== ' ') {
-			position--;
+			adjustPos(-1);
 		}
 		if (styles.length === 0) return undefined;
 		return styles;
 	}
 
-	function parseHexStyle(invert: boolean): HexStyle | undefined {
-		const original = position;
+	function parseHexStyle(invert: boolean): HexStyle | false {
+		const original = savepos();
 		const hash = consume('#');
 		if (hash) {
 			const fghex = consumeWhile((char) => /[0-9a-fA-F]/.test(char));
-			let bghex: string | undefined;
+			let bghex: string | false;
 			if (consume(':')) {
 				bghex = consumeWhile((char) => /[0-9a-fA-F]/.test(char));
-				if (!bghex) return reset(original);
+				if (bghex===false) return reset(original);
 			} else {
 				// no seperator, that means there must be a foreground value
-				if (!fghex) return reset(original);
+				if (fghex===false) return reset(original);
 			}
 			return addKey({
 				type: 'hexstyle',
@@ -255,7 +262,7 @@ export function parse(
 		invert: boolean,
 		kind: 'rgb' | 'bgRgb'
 	): RgbStyle | undefined {
-		const original = position;
+		const original = savepos();
 		const rgb = consume(kind);
 		if (rgb) {
 			consumeWhitespace();
@@ -290,10 +297,10 @@ export function parse(
 		return undefined;
 	}
 
-	function parseTextStyle(invert: boolean): TextStyle | undefined {
-		const original = position;
+	function parseTextStyle(invert: boolean): TextStyle | false {
+		const original = savepos();
 		const style = consumeWhile((char) => /[^\s\\.]/.test(char));
-		if (!style) return reset(original);
+		if (style === false) return reset(original);
 		return addKey({
 			type: 'textstyle',
 			invert,
@@ -313,59 +320,56 @@ export function parse(
 		return consumeWhile(nextWhiteSpace());
 	}
 
-	function consume(segment: string): boolean | undefined {
-		let escaped = 0;
+	function consume(segment: string): boolean  {
+		const original = savepos();
 		let prev = null;
 		for (let j = 0; j < segment.length; j++) {
-			const char = templateString[position+j];
+			const char = nextChar();
 			if (char === '\\') {
 				if (prev !== '\\') {
-					return undefined;
-				} 
+					return reset(original);
+				}
 			}
 			if (char !== segment[j]) {
-				return undefined;
+				return reset(original);
 			}
 			prev = char;
 		}
-		position += segment.length + escaped;
 		return true;
 	}
 
-	function consumeWhile(fn: ConsumeWhileFunction): string | undefined {
-		let newIndex = position;
-		let valueOffset = 0;
+	function consumeWhile(fn: ConsumeWhileFunction): string | false {
+		const original = savepos();
+		let ret = '';
 		let prev = null;
-		while (templateString[newIndex] != null) {
-			const char = templateString[newIndex];
+		for (;;) {
+			const char = nextChar();
 			if (char === '\\') {
 				if (prev !== '\\') {
 					prev = char;
-					newIndex++
 					continue;
 				}
 			}
 			const action = prev === '\\' || fn(char);
-			if (action === true) newIndex++;
+			if (action === true) ret += char;
 			else if (action === false) break;
 			else if (action.kind === 'stop') {
-				newIndex += action.positionOffset || 0;
-				valueOffset += action.valueOffset || 0;
+				ret = ret.slice(0, action.positionOffset);
+				adjustPos(action.positionOffset)
 				break;
 			}
 			prev = char;
 		}
-		if (newIndex > position) {
-			const result = templateString.substring(position, newIndex + valueOffset);
-			position = newIndex;
-			return result;
+		if (partpos != original.partpos && part != original.part) {
+			return ret;
 		}
-		return undefined;
+		return reset(original);
 	}
 
-	function reset(index: number): undefined {
-		position = index;
-		return undefined;
+	function reset(index: Position): false {
+		partpos = index.partpos;
+		part = index.part;
+		return false;
 	}
 
 	function consumeNumber() {

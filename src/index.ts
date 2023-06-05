@@ -34,7 +34,7 @@ function renderer(
 		) {
 			msg =
 				args
-					.map((a, i) => pieces[i] + escape(stringify(a), startTag, endTag))
+					.map((a, i) => pieces[i] + stringify(a))
 					.join('') + pieces[lastIdx];
 		} else {
 			msg = [pieces, ...args.map(stringify)].join(' ');
