@@ -114,10 +114,22 @@ export function parse(
 	function adjustPos(amount: number): undefined {
 		if (partpos+amount < parts[part].length) {
 			if (partpos + amount < 0) {
-				
+				let a = amount;
+				while(a < 0) {
+					if (part === 0) {
+						// wraparound... 
+						part = parts.length-1
+					} else {
+						part--;
+					}
+					partpos = parts[part].length 
+					partpos = 
+				}
 			} else {
 				partpos+=amount
 			}
+		} else {
+			// advance to next (or subsequent)
 		}
 		return undefined;
 	}
