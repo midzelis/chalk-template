@@ -55,7 +55,7 @@ export type Style = TextStyle | RgbStyle | HexStyle;
 
 type ConsumeWhileFunction = (
 	char: string
-) => boolean | { kind: string; positionOffset?: number; valueOffset?: number };
+) => boolean | { positionOffset?: number };
 
 function addKey<Type>(object: Type | undefined): (Type & Keyed) | undefined {
 	if (object === undefined) return undefined;
@@ -89,6 +89,7 @@ export function parse(
 	temp: TemplateStringsArray,
 	...args: any[]
 ): Template {
+	debugger;
 	const { startTag = '{', endTag = '}' } = options;
 
 	const parts: string[][] = [];
@@ -107,34 +108,42 @@ export function parse(
 			partpos,
 		};
 	}
-	function nextChar() {
+	function charAdvance() {
+		const c = char();
 		adjustPos(1);
-		return char();
+		return c;
 	}
 	function adjustPos(amount: number): undefined {
-		if (partpos+amount < parts[part].length) {
-			if (partpos + amount < 0) {
-				let a = amount;
-				while(a < 0) {
-					if (part === 0) {
-						// wraparound... 
-						part = parts.length-1
-					} else {
-						part--;
-					}
-					partpos = parts[part].length 
-					partpos = 
+		let remainder = amount;
+		while (remainder != 0) {
+			if (
+				partpos + remainder < parts[part].length &&
+				partpos + remainder >= 0
+			) {
+				partpos += remainder;
+				remainder = 0;
+			} else if (partpos + remainder < 0) {
+				if (part === 0) {
+					partpos += remainder;
+					return undefined;
 				}
-			} else {
-				partpos+=amount
+				remainder += partpos + 1;
+				part--;
+				partpos = parts[part].length - 1;
+			} else if (partpos + remainder > parts[part].length - 1) {
+				if (part === parts.length - 1) {
+					partpos += remainder;
+					return undefined;
+				}
+				remainder = remainder - 1 - (parts[part].length - 1 - partpos);
+				part++;
+				partpos = 0;
 			}
-		} else {
-			// advance to next (or subsequent)
 		}
 		return undefined;
 	}
 	function char() {
-		return parts[part][partpos]
+		return parts[part]?.[partpos];
 	}
 	function remainder() {
 		let chars = [];
@@ -150,7 +159,7 @@ export function parse(
 		const nodes: AstNode[] = [];
 		for (;;) {
 			const node = parseNode();
-			if (!node) break;
+			if (node===false) break;
 			nodes.push(node);
 		}
 		if (part != parts.length - 1 && partpos != parts[parts.length - 1].length)
@@ -173,6 +182,7 @@ export function parse(
 	}
 
 	function parseChalkTemplate(): StyleTag | false {
+		debugger;
 		const original = savepos();
 		let body: StyleTagChild[] = [];
 		let style: Style[] | false;
@@ -202,20 +212,18 @@ export function parse(
 				const backtrack = match + char;
 				if (backtrack.endsWith(startTag))
 					return {
-						kind: 'stop',
-						positionOffset: -(startTag.length - 1),
+						positionOffset: -startTag.length,
 					};
 				else if (backtrack.endsWith(endTag))
 					return {
-						kind: 'stop',
-						positionOffset: -(endTag.length - 1),
+						positionOffset: -endTag.length,
 					};
 				match += char;
 				return true;
 			};
 		};
 		const value = consumeWhile(untilStartOrEndTagExclusive());
-		if (value === false) return value
+		if (value === false) return value;
 
 		return {
 			type: 'text',
@@ -256,10 +264,10 @@ export function parse(
 			let bghex: string | false;
 			if (consume(':')) {
 				bghex = consumeWhile((char) => /[0-9a-fA-F]/.test(char));
-				if (bghex===false) return reset(original);
+				if (bghex === false) return reset(original);
 			} else {
 				// no seperator, that means there must be a foreground value
-				if (fghex===false) return reset(original);
+				if (fghex === false) return reset(original);
 			}
 			return addKey({
 				type: 'hexstyle',
@@ -332,11 +340,11 @@ export function parse(
 		return consumeWhile(nextWhiteSpace());
 	}
 
-	function consume(segment: string): boolean  {
+	function consume(segment: string): boolean {
 		const original = savepos();
 		let prev = null;
 		for (let j = 0; j < segment.length; j++) {
-			const char = nextChar();
+			const char = charAdvance();
 			if (char === '\\') {
 				if (prev !== '\\') {
 					return reset(original);
@@ -355,27 +363,32 @@ export function parse(
 		let ret = '';
 		let prev = null;
 		for (;;) {
-			const char = nextChar();
-			if (char === '\\') {
+			const char = charAdvance();
+			if (char === undefined) {
+				adjustPos(-1);
+				break;
+			} else if (char === '\\') {
 				if (prev !== '\\') {
 					prev = char;
 					continue;
 				}
 			}
 			const action = prev === '\\' || fn(char);
-			if (action === true) ret += char;
-			else if (action === false) break;
-			else if (action.kind === 'stop') {
-				ret = ret.slice(0, action.positionOffset);
-				adjustPos(action.positionOffset)
+			if (action === true) {
+				ret += char;
+			} else if (action === false) {
+				adjustPos(-1);
+				break;
+			} else if (action) {
+				adjustPos(action.positionOffset || 0);
 				break;
 			}
 			prev = char;
 		}
-		if (partpos != original.partpos && part != original.part) {
+		if (partpos != original.partpos || part != original.part) {
 			return ret;
 		}
-		return reset(original);
+		return false;
 	}
 
 	function reset(index: Position): false {
