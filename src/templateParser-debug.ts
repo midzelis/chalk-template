@@ -2,7 +2,7 @@
 import { chalkTemplateRenderer } from './index.js';
 import { Chalk } from 'chalk';
 import { inspect } from 'node:util';
-import type { AstNode, Style, Template } from './templateParser.js';
+import type { AstNode, Style, Template } from './parser.js';
 
 function unescape(string: string, startTag = '{', endTag = '}') {
 	return string.replaceAll(new RegExp(`(${startTag}|${endTag}){2}`, 'g'), '$1');

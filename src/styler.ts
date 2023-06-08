@@ -1,5 +1,5 @@
 import type { ChalkInstance } from 'chalk';
-import type { AstNode, Style, Template } from './templateParser.js';
+import type { AstNode, Style, Template } from './parser.js';
 
 function unescape(string: string, startTag = '{', endTag = '}') {
 	// return string.replaceAll(new RegExp(`(${startTag}|${endTag}){2}`, 'g'), '$1');
@@ -39,7 +39,7 @@ function configChalk(chalk: ChalkInstance, styles: Map<String, Style>) {
 	return currentChalk;
 }
 
-export function renderChalk(chalk: ChalkInstance, node: Template): string {
+export function render(chalk: ChalkInstance, node: Template): string {
 	let styles = new Map<String, Style>();
 	function visitor(current: AstNode) {
 		if (current.type === 'template') return current.nodes.map(visitor).join('');

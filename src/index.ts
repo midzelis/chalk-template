@@ -1,100 +1,65 @@
 import { Chalk, chalkStderr, type ChalkInstance } from 'chalk';
-import { parse, type AstNode } from './templateParser.js';
-import { renderChalk } from './templateRenderer.js';
+import { parse, type AstNode } from './parser.js';
+import { render } from './styler.js';
 
 interface ChalkResult {
 	rendered: String;
 	ast: AstNode;
 }
-function escape(string: string, startTag = '{', endTag = '}') {
-	// return string.replaceAll(new RegExp(`(${startTag}|${endTag})`, 'g'), '$1$1');
-	return string.replaceAll(new RegExp(`(${startTag}|${endTag}|\\\\)`, 'g'), '\\$1') 
-}
 
-// function renderer(
-// 	chalk: ChalkInstance,
-// 	options?: {
-// 		returnAstNode?: boolean;
-// 		startTag?: string;
-// 		endTag?: string;
-// 	}
-// ) {
-// 	function renderTaggedTemplate(...args: any[]): string;
-// 	function renderTaggedTemplate(
-// 		pieces: TemplateStringsArray,
-// 		...args: any[]
-// 	): string | ChalkResult {
-// 		const { startTag = '{', endTag = '}' } = options || {};
-// 		let msg: string;
-// 		const lastIdx = pieces.length - 1;
-// 		if (
-// 			Array.isArray(pieces) &&
-// 			pieces.every(isString) &&
-// 			lastIdx === args.length
-// 		) {
-// 			msg =
-// 				args
-// 					.map((a, i) => pieces[i] + stringify(a))
-// 					.join('') + pieces[lastIdx];
-// 		} else {
-// 			msg = [pieces, ...args.map(stringify)].join(' ');
-// 		}
-// 		const ast = parse({startTag, endTag}, msg, pieces, ...args);
-// 		const rendered = renderChalk(chalk, ast);
-// 		if (options && options.returnAstNode) {
-// 			return { rendered, ast };
-// 		}
-// 		return rendered;
-// 	}
-// 	return renderTaggedTemplate;
-// }
+type StyleResult = string | ChalkResult;
 
-function renderer(
+type TaggedTemplateHandler = (
+	pieces: TemplateStringsArray,
+	...args: any[]
+) => StyleResult;
+type ArgsHandler = (...args: any[]) => StyleResult;
+
+type StyleHandler = TaggedTemplateHandler | ArgsHandler;
+
+function styler(
 	chalk: ChalkInstance,
 	options?: {
 		returnAstNode?: boolean;
 		startTag?: string;
 		endTag?: string;
 	}
-) {
-	function renderTaggedTemplate(...args: any[]): string;
-	function renderTaggedTemplate(
+): StyleHandler {
+	function styleTaggedTemplate(...args: any[]): StyleResult;
+	function styleTaggedTemplate(
 		pieces: TemplateStringsArray,
 		...args: any[]
-	): string | ChalkResult {
+	): StyleResult {
 		const { startTag = '{', endTag = '}' } = options || {};
 		if (Array.isArray(pieces) && 'raw' in pieces) {
-			const ast = parse({startTag, endTag}, 'msg', pieces, ...args);
-			const rendered = renderChalk(chalk, ast);
+			const ast = parse({ startTag, endTag }, pieces, ...args);
+			const rendered = render(chalk, ast);
 			if (options && options.returnAstNode) {
 				return { rendered, ast };
 			}
 			return rendered;
 		} else {
-			const interleave = (array:any, obj: any) => [].concat(...array.map((n:any) => [n, obj])).slice(0, -1)
-			const ast = parse({startTag, endTag}, 'msg', interleave([pieces as any, ...args], ' '));
-			const rendered = renderChalk(chalk, ast);
+			const interleave = (array: any, obj: any) =>
+				[].concat(...array.map((n: any) => [n, obj])).slice(0, -1);
+			const ast = parse(
+				{ startTag, endTag },
+				interleave([pieces as any, ...args], ' ')
+			);
+			const rendered = render(chalk, ast);
 			if (options && options.returnAstNode) {
 				return { rendered, ast };
 			}
 			return rendered;
 		}
 	}
-	return renderTaggedTemplate;
+	return styleTaggedTemplate;
 }
 
-function stringify(arg: any) {
-	return `${arg}`;
-}
+export const makeTaggedTemplate = (chalkInstance) => {
+	styler(chalkInstance);
+};
 
-function isString(obj: any) {
-	return typeof obj === 'string';
-}
+export default styler(new Chalk());
 
-export const chalkTemplateWithChalk = (chalk: ChalkInstance) => renderer(chalk);
-export const chalkTemplate = renderer(new Chalk());
-export const chalkTemplateStderr = renderer(chalkStderr);
-/**
- * The AST is EXPERIMENTAL and subject to chance.
- */
-export const chalkTemplateRenderer = renderer;
+export const templateStderr = styler(chalkStderr);
+export const chalkTemplateStderr = styler(chalkStderr);
