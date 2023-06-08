@@ -6,10 +6,7 @@
 	"repository": "chalk/chalk-template",
 	"funding": "https://github.com/chalk/chalk-template?sponsor=1",
 	"type": "module",
-	"exports": {
-		"types": "./dist/index.d.ts",
-		"default": "./dist/index.js"
-	},
+	"main": "./dist/index.js",
 	"engines": {
 		"node": ">=14.16"
 	},

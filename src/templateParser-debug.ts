@@ -98,18 +98,21 @@ function debug() {
 	testHex();
 	testFn();
 }
+// test(debugRender`{bold hello ${'{red there}'} {green ok} ${'{red not}'}}`)
+
 // testRandom();
 // test(debugRender`{bold hello }`);
 // debug()
 // test(debugRender`{bold.rgb(144,10,178).inverse Hello, {~inverse there!}}`);
 // test(debugRender`{bold.bgRgb(144,10,178).inverse Hello, {~inverse there!}}`);
 
-test(debugRender`{bold hello ${'{red \\there}'} a ${'{red more}'}}{underline hi ${'b {inverse {a a} escape}'}}`);
+// test(debugRender`{bold hello ${'{red \\there}'} a ${'{red more}'}}{underline hi ${'b {inverse {a a} escape}'}}`);
 // console.log("{bold hello ${'{red \\there}'} a ${'{red more}'}}{underline hi ${'b {inverse {a a} escape}'}}");
 
-function rtest(string) {
-	console.log("input: "+string);
-	const ast = eval("debugRender`"+string+"`");
+function rtest(string, ...args) {
+	console.log("input: ", {string, args});
+	const ast = eval("debugRender`"+string.raw+"`");
+	// const ast = eval("debugRender`"+string+"`");
 	console.log(inspect(ast, { depth: null, colors: true }));
 	const templateString = ast.templateString;
 	console.log("templateString="+templateString)
@@ -119,6 +122,18 @@ function mtest(string) {
 	console.log("input: "+string);
 
 }
+// rtest("{bold yes${'{red !styled a}'} stuff}")
+// rtest("{bold { k ${'{red !styled a}'} stuff}")
+// rtest("{bold { k blah stuff}")
+
+// rtest`{bold \\{ k blah stuff}`
+
+// rtest("{bold styled ${'{red !styled a}'}${'{green !styled a}'} after}remaining")
+// rtest("{bold styled ${'{red !styled a}'} after}remaining")
+// rtest("{bold styled {style ${'{red !styled a}'}} after}remaining")
+
+
+// rtest("{bold styled {style { ${'{style {red styled a}}'}}${'{green !styled a}'} after}remaining")
 // rtest("{bold style \{ \\ ${'{red !style \\ a \{ { } }'} after}remaining")
 // rtest("{bold style \{ \\ {style ${'{red !style \\ a \{ { } }'}} after}remaining")
 // rtest("{bold style \{ \\ {~style ${'{red !style \\ a \{ { } }'}} after}remaining")

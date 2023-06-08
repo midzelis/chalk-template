@@ -11,19 +11,14 @@ export interface StyleTag {
 	style: Style[];
 	children: StyleTagChild[];
 }
-export interface EscapedStyleTag {
-	type: 'escapedstyletag';
-	value: string;
-}
-
 export interface Text {
 	type: 'text';
 	value: string;
 }
 
-export type AstNode = Template | StyleTag | EscapedStyleTag | Text;
+export type AstNode = Template | StyleTag | Text;
 
-export type StyleTagChild = StyleTag | EscapedStyleTag | Text;
+export type StyleTagChild = StyleTag  | Text;
 
 export interface Keyed {
 	key: string;
@@ -53,9 +48,12 @@ export interface HexStyle extends Keyed {
 
 export type Style = TextStyle | RgbStyle | HexStyle;
 
-type ConsumeWhileFunction = (
-	char: string
-) => boolean | { positionOffset?: number };
+type ConsumeWhileFunction = (char: string) =>
+	| boolean
+	| {
+			accept: boolean;
+			positionOffset: number;
+	  };
 
 function addKey<Type>(object: Type | undefined): (Type & Keyed) | undefined {
 	if (object === undefined) return undefined;
@@ -79,19 +77,19 @@ type Options = {
 	endTag?: string;
 };
 
-type Position = {
+type State = {
 	part: number;
 	partpos: number;
+	styleStack: boolean[];
 };
 export function parse(
 	options: Options = {},
 	templateString: string,
-	temp: TemplateStringsArray,
+	temp: string[],
 	...args: any[]
 ): Template {
-	debugger;
 	const { startTag = '{', endTag = '}' } = options;
-
+	debugger;
 	const parts: string[][] = [];
 	parts.push([...temp[0]]);
 	for (let index = 1; index < temp.length; index++) {
@@ -101,20 +99,41 @@ export function parse(
 
 	let part = 0;
 	let partpos = 0;
+	let styleStack = [];
+	let cachedChar: string | undefined;
 
-	function savepos(): Position {
+	function saveState(): State {
 		return {
 			part,
 			partpos,
+			styleStack: [...styleStack],
 		};
 	}
+	function isEscaped() {
+		if (cachedChar === undefined) {
+			cachedChar = prevChar();
+		}
+		return cachedChar === '\\';
+	}
 	function charAdvance() {
-		const c = char();
+		let c = char();
+		if (c === '\\' && !isEscaped()) {
+			adjustPos(1);
+			const newPrev = c;
+			c = char();
+			adjustPos(1);
+			cachedChar = newPrev;
+			return c;
+		}
 		adjustPos(1);
-		return c;
+		return (cachedChar = c);
 	}
 	function adjustPos(amount: number): undefined {
 		let remainder = amount;
+		if (amount < 0 && cachedChar == '\\') {
+			remainder--;
+		}
+		cachedChar = undefined;
 		while (remainder != 0) {
 			if (
 				partpos + remainder < parts[part].length &&
@@ -125,7 +144,7 @@ export function parse(
 			} else if (partpos + remainder < 0) {
 				if (part === 0) {
 					partpos += remainder;
-					return undefined;
+					return;
 				}
 				remainder += partpos + 1;
 				part--;
@@ -133,22 +152,37 @@ export function parse(
 			} else if (partpos + remainder > parts[part].length - 1) {
 				if (part === parts.length - 1) {
 					partpos += remainder;
-					return undefined;
+					return;
 				}
 				remainder = remainder - 1 - (parts[part].length - 1 - partpos);
 				part++;
 				partpos = 0;
 			}
 		}
-		return undefined;
+		return;
 	}
 	function char() {
 		return parts[part]?.[partpos];
 	}
+	function prevChar() {
+		const saved = { part, partpos };
+		adjustPos(-1);
+		const c = parts[part]?.[partpos];
+		part = saved.part;
+		partpos = saved.partpos;
+		return c;
+	}
 	function remainder() {
+		if (
+			part < 0 ||
+			part > parts.length - 1 ||
+			partpos < 0 ||
+			partpos > parts[part].length - 1
+		)
+			return;
 		let chars = [];
 		chars.push(...parts[part].slice(partpos));
-		for (let i = part; i < parts.length; i++) {
+		for (let i = part + 1; i < parts.length; i++) {
 			chars.push(...parts[i]);
 		}
 		return chars.reduce((prev, curr) => prev + curr);
@@ -159,14 +193,17 @@ export function parse(
 		const nodes: AstNode[] = [];
 		for (;;) {
 			const node = parseNode();
-			if (node===false) break;
+			if (!node) break;
 			nodes.push(node);
 		}
-		if (part != parts.length - 1 && partpos != parts[parts.length - 1].length)
+		const value = remainder();
+		if (value) {
 			nodes.push({
 				type: 'text',
-				value: remainder(),
+				value,
 			});
+		}
+
 		return {
 			type: 'template',
 			nodes,
@@ -176,63 +213,115 @@ export function parse(
 		};
 	}
 
-	function parseNode(): StyleTag | EscapedStyleTag | Text | false {
+	function parseNode(): StyleTag | Text | undefined {
 		// directly check for escaped here
 		return parseChalkTemplate() ?? parseText();
 	}
 
-	function parseChalkTemplate(): StyleTag | false {
+	function isOdd(x: number): boolean {
+		return !!(x & 1);
+	}
+
+	function parseChalkTemplate(): StyleTag | undefined {
 		debugger;
-		const original = savepos();
+		// this is an escaped arg
+		if (isOdd(part) && !styleStack[styleStack.length - 1]) return;
+
+		const original = saveState();
 		let body: StyleTagChild[] = [];
 		let style: Style[] | false;
-		if (consume(startTag)) {
+		if (consumeStartTag()) {
 			style = parseStyles();
 			if (!style) return reset(original);
+			if (
+				style.length === 1 &&
+				style[0].type === 'textstyle' &&
+				style[0].value === 'style'
+			) {
+				if (isOdd(part) && partpos === 0) {
+					// for style to apply, we must be at the start of an arg
+					styleStack.push(true);
+				}
+			}
+
 			for (;;) {
-				debugger;
 				const node = parseNode();
 				if (!node) break;
 				body.push(node);
 			}
-			if (!consume(endTag)) return reset(original);
+			if (!consumeEndTag()) return reset(original);
+			styleStack = original.styleStack;
 			return {
 				type: 'styletag',
 				style,
 				children: body,
 			};
 		}
-		return undefined;
+		return;
 	}
 
-	function parseText(): Text | false {
+	function consumeStartTag() {
+		debugger;
+		const original = saveState();
+		const consumed = consume(startTag);
+		if (consumed && isEscaped()) return reset(original);
+		return consumed;
+	}
+
+	function consumeEndTag() {
+		const original = saveState();
+		const consumed = consume(endTag);
+		if (consumed && isEscaped()) return reset(original);
+		return consumed;
+	}
+
+	function parseText(): Text | undefined {
+		if (isOdd(part) && !styleStack[styleStack.length - 1]) {
+			const value = parts[part]
+				.slice(partpos, parts[part].length)
+				.reduce((a, b) => a + b);
+			adjustPos(value.length);
+			return {
+				type: 'text',
+				value,
+			};
+		}
 		const untilStartOrEndTagExclusive = () => {
-			let match = '';
+			let characters = '';
+			let originalpart = part;
 			return (char: string) => {
-				const backtrack = match + char;
+				const backtrack = characters.endsWith('\\')
+					? characters
+					: characters + char;
 				if (backtrack.endsWith(startTag))
 					return {
+						accept: false,
 						positionOffset: -startTag.length,
 					};
 				else if (backtrack.endsWith(endTag))
 					return {
+						accept: false,
 						positionOffset: -endTag.length,
 					};
-				match += char;
+				if (part != originalpart)
+					return {
+						accept: true,
+						positionOffset: 0,
+					};
+				characters += char;
 				return true;
 			};
 		};
 		const value = consumeWhile(untilStartOrEndTagExclusive());
-		if (value === false) return value;
-
+		if (value === undefined) return;
 		return {
 			type: 'text',
 			value,
 		};
 	}
 
-	function parseStyles(): Style[] | false {
-		const original = savepos();
+	function parseStyles(): Style[] | undefined {
+		const original = saveState();
 		const styles: Style[] = [];
 		for (;;) {
 			const invert = consume('~');
@@ -245,6 +334,7 @@ export function parse(
 			styles.push(style);
 			if (!consume('.')) break;
 		}
+		if (styles.length === 0) return;
 		// There must be whitespace following the style, to delineate end of style
 		// If the whitespace is ' ', then it is swallowed, otherwise it is preserved
 		const nextSpace = consumeNextWhitespace();
@@ -252,22 +342,22 @@ export function parse(
 		if (nextSpace !== ' ') {
 			adjustPos(-1);
 		}
-		if (styles.length === 0) return undefined;
+		if (styles.length === 0) return;
 		return styles;
 	}
 
-	function parseHexStyle(invert: boolean): HexStyle | false {
-		const original = savepos();
+	function parseHexStyle(invert: boolean | undefined): HexStyle | undefined {
+		const original = saveState();
 		const hash = consume('#');
 		if (hash) {
 			const fghex = consumeWhile((char) => /[0-9a-fA-F]/.test(char));
-			let bghex: string | false;
+			let bghex: string | undefined;
 			if (consume(':')) {
 				bghex = consumeWhile((char) => /[0-9a-fA-F]/.test(char));
-				if (bghex === false) return reset(original);
+				if (!bghex) return reset(original);
 			} else {
 				// no seperator, that means there must be a foreground value
-				if (fghex === false) return reset(original);
+				if (!fghex) return reset(original);
 			}
 			return addKey({
 				type: 'hexstyle',
@@ -276,13 +366,13 @@ export function parse(
 				bghex,
 			});
 		}
-		return undefined;
+		return;
 	}
 	function parseRgbStyle(
-		invert: boolean,
+		invert: boolean | undefined,
 		kind: 'rgb' | 'bgRgb'
 	): RgbStyle | undefined {
-		const original = savepos();
+		const original = saveState();
 		const rgb = consume(kind);
 		if (rgb) {
 			consumeWhitespace();
@@ -314,13 +404,13 @@ export function parse(
 				},
 			});
 		}
-		return undefined;
+		return;
 	}
 
-	function parseTextStyle(invert: boolean): TextStyle | false {
-		const original = savepos();
+	function parseTextStyle(invert: boolean | undefined): TextStyle | false {
+		const original = saveState();
 		const style = consumeWhile((char) => /[^\s\\.]/.test(char));
-		if (style === false) return reset(original);
+		if (!style) return reset(original);
 		return addKey({
 			type: 'textstyle',
 			invert,
@@ -334,67 +424,55 @@ export function parse(
 			return (char: string) => {
 				if (limit === 0) return false;
 				limit--;
-				return /\s/.test(char);
+				return isWhitespace(char);
 			};
 		};
 		return consumeWhile(nextWhiteSpace());
 	}
 
 	function consume(segment: string): boolean {
-		const original = savepos();
-		let prev = null;
+		const original = saveState();
 		for (let j = 0; j < segment.length; j++) {
 			const char = charAdvance();
-			if (char === '\\') {
-				if (prev !== '\\') {
-					return reset(original);
-				}
-			}
-			if (char !== segment[j]) {
-				return reset(original);
-			}
-			prev = char;
+			if (char !== segment[j]) return reset(original);
 		}
 		return true;
 	}
 
-	function consumeWhile(fn: ConsumeWhileFunction): string | false {
-		const original = savepos();
+	function consumeWhile(fn: ConsumeWhileFunction): string | undefined {
+		const original = saveState();
 		let ret = '';
-		let prev = null;
+
 		for (;;) {
 			const char = charAdvance();
 			if (char === undefined) {
 				adjustPos(-1);
 				break;
-			} else if (char === '\\') {
-				if (prev !== '\\') {
-					prev = char;
-					continue;
-				}
 			}
-			const action = prev === '\\' || fn(char);
+			const action = fn(char);
 			if (action === true) {
 				ret += char;
 			} else if (action === false) {
 				adjustPos(-1);
 				break;
-			} else if (action) {
-				adjustPos(action.positionOffset || 0);
+			} else {
+				const { accept, positionOffset } = action;
+				if (accept) ret += char;
+				adjustPos(positionOffset);
 				break;
 			}
-			prev = char;
 		}
 		if (partpos != original.partpos || part != original.part) {
 			return ret;
 		}
-		return false;
+		return;
 	}
 
-	function reset(index: Position): false {
+	function reset(index: State): undefined {
 		partpos = index.partpos;
 		part = index.part;
-		return false;
+		styleStack = index.styleStack;
+		return;
 	}
 
 	function consumeNumber() {
@@ -402,7 +480,7 @@ export function parse(
 	}
 
 	function consumeWhitespace() {
-		consumeWhile(isWhitespace);
+		return consumeWhile(isWhitespace);
 	}
 	function isWhitespace(char: string) {
 		// prettier-ignore
