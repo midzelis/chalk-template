@@ -110,6 +110,7 @@ export function parse(
 	strict = options.strict || false;
 	compat = options.compat || false;
 	styleStack = [];
+	debugger;
 	setSource(temp, ...args);
 	const nodes = parseNodes();
 	startTag = endTag = styleStack = undefined;
@@ -131,12 +132,33 @@ function parseNodes(): AstNode[] {
 	const value = consumeRemainder();
 	if (value) {
 		if (compat) {
-	
-			const count = value.split('}').length - 1 > 0;
-			error(
-				`Chalk template literal is missing ${count} closing bracket(\`}\`)`,
-				null
-			);
+			if (strict) {
+				const untilStartOrEndTagExclusive = () => {
+					let characters = '';
+					let originalpart = getPart();
+					return (char: string) => {
+						const escape = char === '\\';
+						const escaping = characters.endsWith('\\');
+						const backtrack = escaping ? characters : characters + char;
+						if (backtrack.endsWith(endTag)) {
+							error(
+								`Found extraneous ${endTag} in Chalk template literal`,
+								null
+							);
+						}
+
+						characters += char;
+						if (escape)
+							return {
+								stop: false,
+								accept: false,
+								positionOffset: 0,
+							};
+						return true;
+					};
+				};
+				const value = consumeWhile(untilStartOrEndTagExclusive());
+			}
 		}
 		nodes.push({
 			type: 'text',
@@ -168,7 +190,6 @@ function error(msg, cb) {
 }
 
 function parseChalkTemplate(): TagNode | undefined {
-
 	// this is an escaped arg
 	if (isArgument() && !styleStack[styleStack.length - 1]) return;
 
@@ -178,7 +199,9 @@ function parseChalkTemplate(): TagNode | undefined {
 	if (consumeStartTag()) {
 		style = parseStyles();
 		if (!style)
-			return error('Expected [TextStyle | RgbStyle | HexStyle]', () => restoreStateAndStyleStack(original));
+			return error('Expected [TextStyle | RgbStyle | HexStyle]', () =>
+				restoreStateAndStyleStack(original)
+			);
 		if (
 			style.length === 1 &&
 			style[0].style === 'text' &&
@@ -210,7 +233,6 @@ function parseChalkTemplate(): TagNode | undefined {
 }
 
 function consumeStartTag() {
-
 	const original = saveState();
 	const consumed = consume(startTag);
 	if (consumed && isEscaped()) return reset(original);

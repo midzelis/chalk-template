@@ -17,14 +17,21 @@ let partpos: number;
 
 let cachedChar: string | undefined;
 
-export function setSource(temp: ReadonlyArray<string>, ...args: any[]) {
+export function setSource(
+	temp: ReadonlyArray<string>,
+	...args: any[]
+) {
 	cachedChar = undefined;
 	parts = [];
 	part = 0;
 	partpos = 0;
 	parts.push([...temp[0]]);
 	for (let index = 1; index < temp.length; index++) {
-		parts.push([...`${args[index - 1]}`]);
+		if (args.length - (index - 1) < 0) {
+			parts.push([]);
+		} else {
+			parts.push([...`${args[index - 1]}`]);
+		}
 		parts.push([...temp[index]]);
 	}
 }
@@ -218,16 +225,16 @@ function isOdd(x: number): boolean {
 	return !!(x & 1);
 }
 
-function toAbsPosition() {
-	let count = partpos;
-	for (let p = part - 1; p >= 0; p--) {
+function toAbsPosition(partIdx: number = part, partposIdx: number = partpos) {
+	let count = partposIdx;
+	for (let p = partIdx - 1; p >= 0; p--) {
 		const _part = parts[p];
 		count += _part.length;
 	}
 	return count;
 }
 
-function getErrorContextualString() {
+function getErrorContextualString(isArg: boolean) {
 	const adj = 40;
 
 	const original = saveState();
@@ -244,14 +251,28 @@ function getErrorContextualString() {
 	}
 	reset(original);
 	string += '\n';
+
 	if (over < 0) {
-		console.log('over', over, 'adj', adj);
 		const a = adj + over;
-		console.log(a);
-		string += '-'.repeat(a) + '^';
+
+		if (isArg) {
+			string += '-'.repeat(a) + '^';
+			string += '-'.repeat(parts[part].length - 2) + '^';
+		} else {
+			string += '-'.repeat(a) + '^';
+		}
 	} else {
-		string = '...' + string;
-		string += '   ' + '-'.repeat(adj) + '^';
+		if (isArg) {
+			string = '\u2026' + string;
+
+			const prefix = toAbsPosition() - toAbsPosition(part, 0);
+			const c = toAbsPosition(part, 0) - over;
+			string += '\u2026' + ' '.repeat(c) + '-'.repeat(prefix) + '^';
+			string += '-'.repeat(parts[part].length - 1 - prefix);
+		} else {
+			string = '\u2026' + string;
+			string += '\u2026' + '-'.repeat(adj) + '^';
+		}
 	}
 	return string;
 }
@@ -260,7 +281,7 @@ export function createError(msg: string) {
 	const isArg = isArgument();
 	const argNumber = isArg ? (part - 1) / 2 : -1;
 
-	const context = getErrorContextualString();
+	const context = getErrorContextualString(isArg);
 	let builder = `${msg}\n`;
 
 	builder += `Parsing: `;

@@ -123,7 +123,8 @@ function mtest(string) {
 	console.log('input: ' + string);
 }
 // console.log(debugRender`{bold style\\{d {style ${'{ !styled a}'}} after}remaining`)
-rtest("                          {bold style\\{d {style ${'{ !styled a}'}} after}remaining")
+// rtest("                          {bold style\\{d {style ${'        { !styled a}'}} after}remaining")
+rtest("{bold style\\{d {style         { !styled a}} after}remaining")
 
 // rtest("")
 // rtest("{bold yes${'{red !styled a}'} stuff}")

@@ -55,10 +55,11 @@ for (const [chalkTemplate, stdio] of [[chalkTemplateStdout, 'stdout'], [chalkTem
 
 	test(`[${stdio}] throws if an extra unescaped } is found`, t => {
 		t.throws(() => {
+			debugger;
 			// eslint-disable-next-line no-unused-expressions
 			chalkTemplate`{red hi!}}`;
 		}, {
-			message: 'Found extraneous } in Chalk template literal',
+			message: 'Found extraneous } in Chalk template literal\nParsing: Tagged Template String\nOffset: 9\n{red hi!}}\n---------^',
 		});
 	});
 

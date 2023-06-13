@@ -1,10 +1,10 @@
 import { type ChalkInstance } from 'chalk';
-import { parse, type AstNode, type ParserOptions } from './parser.js';
+import { parse, type ParserOptions, type TemplateNode } from './parser.js';
 import { chalker } from './chalker.js';
 
-type ChalkedResult = {
+export type ChalkedResult = {
 	rendered: String;
-	ast: AstNode;
+	ast: TemplateNode;
 };
 
 export type DrawResult = string | ChalkedResult;
@@ -13,45 +13,23 @@ export type DrawOptions = ParserOptions & {
 	returnAstNode?: boolean;
 };
 
-function drawTag(
-	chalk: ChalkInstance,
-	options: DrawOptions,
-	strings: TemplateStringsArray,
-	...values: any[]
-) {
-	const ast = parse(options, strings, ...values);
-	const rendered = chalker(chalk, ast);
-	if (options && options.returnAstNode) {
-		return { rendered, ast };
-	}
-	return rendered;
-}
-
-const interleave = (array: any, obj: any) =>
-	[].concat(...array.map((n: any) => [n, obj])).slice(0, -1);
-
-function drawArgs(
-	chalk: ChalkInstance,
-	options: DrawOptions,
-	fnArg: any,
-	...fnArgs: any[]
-) {
-	const ast = parse(options, interleave([fnArg, ...fnArgs], ' '));
-	const rendered = chalker(chalk, ast);
-	if (options && options.returnAstNode) {
-		return { rendered, ast };
-	}
-}
-
 export function drawer(chalk: ChalkInstance, options?: DrawOptions) {
 	function tagFunction(
 		arg: TemplateStringsArray | any,
 		...args: any[]
 	): DrawResult {
+		let parser: () => TemplateNode;
 		if (Array.isArray(arg) && 'raw' in arg) {
-			return drawTag(chalk, options, arg as TemplateStringsArray, ...args);
+			parser = () => parse(options, arg, ...args);
+		} else {
+			parser = () => parse(options, [arg, ...args]);
 		}
-		return drawArgs(chalk, options, arg, ...args);
+		const ast = parser();
+		const rendered = chalker(chalk, ast);
+		if (options && options.returnAstNode) {
+			return { rendered, ast };
+		}
+		return rendered;
 	}
 	return tagFunction;
 }
