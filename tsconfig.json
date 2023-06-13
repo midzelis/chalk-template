@@ -3,7 +3,7 @@
 	"compilerOptions": {
 		"moduleResolution": "nodenext",
 		"declaration": true,
-		"target": "ES6",
+		"target": "es2017",
 		"outDir": "dist",
 		"rootDir": "src",
 		"lib": ["ES2021.String"]

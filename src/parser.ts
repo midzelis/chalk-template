@@ -14,40 +14,40 @@ import {
 	saveState,
 	setSource,
 	consumeRemainderOfPart,
+	createError,
 } from './source.js';
 import { type State } from './source.js';
 
-export interface Template {
+export interface TemplateNode {
 	type: 'template';
 	nodes: AstNode[];
 	startTag: string;
 	endTag: string;
 }
 
-export interface StyleTag {
-	type: 'styletag';
+export interface TagNode {
+	type: 'tag';
 	style: Style[];
 	children: StyleTagChild[];
 }
-export interface Text {
+export interface TextNode {
 	type: 'text';
 	value: string;
 }
 
-export type AstNode = Template | StyleTag | Text;
+export type AstNode = TemplateNode | TagNode | TextNode;
 
-export type StyleTagChild = StyleTag | Text;
-
+export type StyleTagChild = TagNode | TextNode;
 export interface Keyed {
 	key: string;
 }
 export interface TextStyle extends Keyed {
-	type: 'textstyle';
+	style: 'text';
 	invert: boolean;
 	value: string;
 }
 export interface RgbStyle extends Keyed {
-	type: 'rgbstyle';
+	style: 'rgb';
 	invert: boolean;
 	rgb?: RGB;
 	bgRgb?: RGB;
@@ -58,7 +58,7 @@ export interface RGB {
 	blue: number;
 }
 export interface HexStyle extends Keyed {
-	type: 'hexstyle';
+	style: 'hex';
 	invert: boolean;
 	fghex: string | false;
 	bghex: string | false;
@@ -83,9 +83,11 @@ function addKey<Type>(object: Type | undefined): (Type & Keyed) | undefined {
 	return ret;
 }
 
-type Options = {
+export type ParserOptions = {
 	startTag?: string;
 	endTag?: string;
+	strict?: boolean;
+	compat?: boolean;
 };
 
 type StyleAndPosition = {
@@ -96,15 +98,19 @@ type StyleAndPosition = {
 let startTag: string;
 let endTag: string;
 let styleStack: boolean[];
+let compat: boolean;
+let strict: boolean;
 export function parse(
-	options: Options = {},
-	temp: string[],
+	options: ParserOptions = {},
+	temp: ReadonlyArray<string>,
 	...args: any[]
-): Template {
+): TemplateNode {
 	startTag = options.startTag || '{';
 	endTag = options.endTag || '}';
+	strict = options.strict || false;
+	compat = options.compat || false;
 	styleStack = [];
-	setSource(temp, args);
+	setSource(temp, ...args);
 	const nodes = parseNodes();
 	startTag = endTag = styleStack = undefined;
 	return {
@@ -124,6 +130,14 @@ function parseNodes(): AstNode[] {
 	}
 	const value = consumeRemainder();
 	if (value) {
+		if (compat) {
+	
+			const count = value.split('}').length - 1 > 0;
+			error(
+				`Chalk template literal is missing ${count} closing bracket(\`}\`)`,
+				null
+			);
+		}
 		nodes.push({
 			type: 'text',
 			value,
@@ -132,7 +146,7 @@ function parseNodes(): AstNode[] {
 	return nodes;
 }
 
-function parseNode(): StyleTag | Text | undefined {
+function parseNode(): TagNode | TextNode | undefined {
 	// directly check for escaped here
 	return parseChalkTemplate() ?? parseText();
 }
@@ -148,8 +162,13 @@ function restoreStateAndStyleStack(state: StyleAndPosition): undefined {
 	styleStack = state.styleStack;
 	return;
 }
-function parseChalkTemplate(): StyleTag | undefined {
-	debugger;
+function error(msg, cb) {
+	createError(msg);
+	return cb();
+}
+
+function parseChalkTemplate(): TagNode | undefined {
+
 	// this is an escaped arg
 	if (isArgument() && !styleStack[styleStack.length - 1]) return;
 
@@ -158,10 +177,11 @@ function parseChalkTemplate(): StyleTag | undefined {
 	let style: Style[] | false;
 	if (consumeStartTag()) {
 		style = parseStyles();
-		if (!style) return restoreStateAndStyleStack(original);
+		if (!style)
+			return error('Expected [TextStyle | RgbStyle | HexStyle]', () => restoreStateAndStyleStack(original));
 		if (
 			style.length === 1 &&
-			style[0].type === 'textstyle' &&
+			style[0].style === 'text' &&
 			style[0].value === 'style'
 		) {
 			if (isStartOfArgument()) {
@@ -175,10 +195,13 @@ function parseChalkTemplate(): StyleTag | undefined {
 			if (!node) break;
 			body.push(node);
 		}
-		if (!consumeEndTag()) return restoreStateAndStyleStack(original);
+		if (!consumeEndTag())
+			return error(`Expected ${endTag}`, () =>
+				restoreStateAndStyleStack(original)
+			);
 		styleStack = original.styleStack;
 		return {
-			type: 'styletag',
+			type: 'tag',
 			style,
 			children: body,
 		};
@@ -187,7 +210,7 @@ function parseChalkTemplate(): StyleTag | undefined {
 }
 
 function consumeStartTag() {
-	debugger;
+
 	const original = saveState();
 	const consumed = consume(startTag);
 	if (consumed && isEscaped()) return reset(original);
@@ -201,7 +224,7 @@ function consumeEndTag() {
 	return consumed;
 }
 
-function parseText(): Text | undefined {
+function parseText(): TextNode | undefined {
 	if (isArgument() && !styleStack[styleStack.length - 1]) {
 		const value = consumeRemainderOfPart();
 		return {
@@ -213,25 +236,34 @@ function parseText(): Text | undefined {
 		let characters = '';
 		let originalpart = getPart();
 		return (char: string) => {
-			const backtrack = characters.endsWith('\\')
-				? characters
-				: characters + char;
+			const escape = char === '\\';
+			const escaping = characters.endsWith('\\');
+			const backtrack = escaping ? characters : characters + char;
 			if (backtrack.endsWith(startTag))
 				return {
+					stop: true,
 					accept: false,
 					positionOffset: -startTag.length,
 				};
 			else if (backtrack.endsWith(endTag))
 				return {
+					stop: true,
 					accept: false,
 					positionOffset: -endTag.length,
 				};
 			else if (getPart() != originalpart)
 				return {
+					stop: true,
 					accept: true,
 					positionOffset: 0,
 				};
 			characters += char;
+			if (escape)
+				return {
+					stop: false,
+					accept: false,
+					positionOffset: 0,
+				};
 			return true;
 		};
 	};
@@ -283,7 +315,7 @@ function parseHexStyle(invert: boolean | undefined): HexStyle | undefined {
 			if (!fghex) return reset(original);
 		}
 		return addKey({
-			type: 'hexstyle',
+			style: 'hex',
 			invert,
 			fghex,
 			bghex,
@@ -318,7 +350,7 @@ function parseRgbStyle(
 		const rparen = consume(')');
 		if (!rparen) reset(original);
 		return addKey({
-			type: 'rgbstyle',
+			style: 'rgb',
 			invert,
 			[kind]: {
 				red,
@@ -335,7 +367,7 @@ function parseTextStyle(invert: boolean | undefined): TextStyle | false {
 	const style = consumeWhile((char) => /[^\s\\.]/.test(char));
 	if (!style) return reset(original);
 	return addKey({
-		type: 'textstyle',
+		style: 'text',
 		invert,
 		value: style,
 	});

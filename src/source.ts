@@ -1,6 +1,7 @@
 type ConsumeWhileFunction = (char: string) =>
 	| boolean
 	| {
+			stop: boolean;
 			accept: boolean;
 			positionOffset: number;
 	  };
@@ -10,16 +11,20 @@ export type State = {
 	partpos: number;
 };
 
-let parts: string[][] = [];
-let part = 0;
-let partpos = 0;
+let parts: string[][];
+let part: number;
+let partpos: number;
 
 let cachedChar: string | undefined;
 
-export function setSource(temp: string[], ...args: any[]) {
+export function setSource(temp: ReadonlyArray<string>, ...args: any[]) {
+	cachedChar = undefined;
+	parts = [];
+	part = 0;
+	partpos = 0;
 	parts.push([...temp[0]]);
 	for (let index = 1; index < temp.length; index++) {
-		parts.push([...args[index - 1]]);
+		parts.push([...`${args[index - 1]}`]);
 		parts.push([...temp[index]]);
 	}
 }
@@ -168,10 +173,10 @@ export function consumeWhile(fn: ConsumeWhileFunction): string | undefined {
 			adjustPos(-1);
 			break;
 		} else {
-			const { accept, positionOffset } = action;
+			const { accept, positionOffset, stop } = action;
 			if (accept) ret += char;
 			adjustPos(positionOffset);
-			break;
+			if (stop) break;
 		}
 	}
 	if (partpos != original.partpos || part != original.part) {
@@ -211,4 +216,60 @@ function isDigit(char: string) {
 }
 function isOdd(x: number): boolean {
 	return !!(x & 1);
+}
+
+function toAbsPosition() {
+	let count = partpos;
+	for (let p = part - 1; p >= 0; p--) {
+		const _part = parts[p];
+		count += _part.length;
+	}
+	return count;
+}
+
+function getErrorContextualString() {
+	const adj = 40;
+
+	const original = saveState();
+	debugger;
+	// get 40 characters before and after current position
+	adjustPos(-adj);
+	const over = partpos;
+	let string = '';
+	debugger;
+	for (let i = 0; i < adj * 2; i++) {
+		const c = char();
+		if (c !== undefined) string += c;
+		adjustPos(1);
+	}
+	reset(original);
+	string += '\n';
+	if (over < 0) {
+		console.log('over', over, 'adj', adj);
+		const a = adj + over;
+		console.log(a);
+		string += '-'.repeat(a) + '^';
+	} else {
+		string = '...' + string;
+		string += '   ' + '-'.repeat(adj) + '^';
+	}
+	return string;
+}
+
+export function createError(msg: string) {
+	const isArg = isArgument();
+	const argNumber = isArg ? (part - 1) / 2 : -1;
+
+	const context = getErrorContextualString();
+	let builder = `${msg}\n`;
+
+	builder += `Parsing: `;
+	if (isArg) {
+		builder += `Tagged Template Argument[${argNumber}]\n`;
+	} else {
+		builder += `Tagged Template String\n`;
+	}
+	builder += `Offset: ${toAbsPosition()}\n`;
+	builder += `${context}`;
+	throw new Error(builder);
 }

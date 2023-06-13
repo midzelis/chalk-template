@@ -1,48 +1,44 @@
 #!/usr/bin/env ts-node
-import { chalkTemplateRenderer } from './index.js';
+import { makeTemplate as chalkTemplateRenderer } from './index.js';
 import { Chalk } from 'chalk';
 import { inspect } from 'node:util';
-import type { AstNode, Style, Template } from './parser.js';
+import type { AstNode, Style, TagNode, TemplateNode } from './parser.js';
 
-function unescape(string: string, startTag = '{', endTag = '}') {
-	return string.replaceAll(new RegExp(`(${startTag}|${endTag}){2}`, 'g'), '$1');
-}
-
-function toString(node: Template) {
-	function visitor(current: AstNode | Style) {
-		if (current.type === 'template') return current.nodes.map(visitor).join('');
-		else if (current.type === 'text') return unescape(current.value);
-		else if (current.type === 'styletag')
-			return `${node.startTag}${current.style
-				.map(visitor)
-				.join('.')} ${current.children.map(visitor).join('')}${node.endTag}`;
-		else if (current.type === 'textstyle') {
-			return `${current.invert ? '~' : ''}${current.value}`;
-		} else if (current.type === 'hexstyle') {
+function toString(node: TemplateNode) {
+	function styleToString(current: Style) {
+		let ret = '';
+		if (current.invert) ret += '~';
+		if (current.style === 'hex') {
 			if (current.fghex && current.bghex)
-				return current.invert
-					? '~'
-					: '' + '#' + current.fghex + ':' + current.bghex;
-			else if (current.fghex && !current.bghex)
-				return current.invert ? '~' : '' + '#' + current.fghex;
-			else if (!current.fghex && current.bghex)
-				return current.invert ? '~' : '' + '#:' + current.bghex;
-		} else if (current.type === 'rgbstyle') {
-			if (current.rgb) {
-				const { red, green, blue } = current.rgb;
-				return `rgb(${red},${green},${blue})`;
-			} else {
-				const { red, green, blue } = current.bgRgb;
-				return `bgRgb(${red},${green},${blue})`;
-			}
+				ret += '#' + current.fghex + ':' + current.bghex;
+			else if (current.fghex && !current.bghex) ret += '#' + current.fghex;
+			else if (!current.fghex && current.bghex) ret += '#:' + current.bghex;
+		} else if (current.style === 'rgb') {
+			const { red, green, blue } = current.rgb;
+			ret += `rgb(${red},${green},${blue})`;
+		} else if (current.style === 'text') {
+			ret += current.value;
 		}
-
+		return ret;
+	}
+	function visitor(current: AstNode) {
+		if (current.type === 'template') return current.nodes.map(visitor).join('');
+		else if (current.type === 'text') return current.value;
+		else if (current.type === 'tag')
+			return `${node.startTag}${current.style
+				.map(styleToString)
+				.join('.')} ${current.children.map(visitor).join('')}${node.endTag}`;
 		return '';
 	}
 	return visitor(node);
 }
 
 const debugRender = chalkTemplateRenderer(new Chalk(), { returnAstNode: true });
+
+// import chalkTemplate, {chalkTemplateStderr, makeTaggedTemplate} from './index.js';
+
+// debugger;
+// console.log(chalkTemplateStderr``)
 
 function test(result) {
 	const ast = result.ast;
@@ -98,6 +94,8 @@ function debug() {
 	testHex();
 	testFn();
 }
+// debugger;
+
 // test(debugRender`{bold hello ${'{red there}'} {green ok} ${'{red not}'}}`)
 
 // testRandom();
@@ -110,28 +108,59 @@ function debug() {
 // console.log("{bold hello ${'{red \\there}'} a ${'{red more}'}}{underline hi ${'b {inverse {a a} escape}'}}");
 
 function rtest(string, ...args) {
-	console.log("input: ", {string, args});
-	const ast = eval("debugRender`"+string.raw+"`");
+	console.log(string);
+	console.log('input: ', { string, args });
+	const s = string.raw === undefined ? string.replace('\\', '\\\\')  : string.raw;
+	console.log(s)
+	const ast = eval('debugRender`' + s + '`');
 	// const ast = eval("debugRender`"+string+"`");
 	console.log(inspect(ast, { depth: null, colors: true }));
 	const templateString = ast.templateString;
-	console.log("templateString="+templateString)
-	console.log(ast.rendered)
+	console.log('templateString=' + templateString);
+	console.log(ast.rendered);
 }
 function mtest(string) {
-	console.log("input: "+string);
-
+	console.log('input: ' + string);
 }
+// console.log(debugRender`{bold style\\{d {style ${'{ !styled a}'}} after}remaining`)
+rtest("                          {bold style\\{d {style ${'{ !styled a}'}} after}remaining")
+
+// rtest("")
 // rtest("{bold yes${'{red !styled a}'} stuff}")
 // rtest("{bold { k ${'{red !styled a}'} stuff}")
 // rtest("{bold { k blah stuff}")
 
 // rtest`{bold \\{ k blah stuff}`
+// rtest`{bold hello \{in brackets\}}`
+// rtest`{abadstylethatdoesntexist this shouldn't work ever}`;
+// rtest`{bold this shouldn't work ever\\}`
+// rtest`{red hi!}}`;
+
+// process.on('SIGINT', (signal) => {
+// 	console.log('my test got it ', signal)
+// 	process.exit(1);
+// });
+// process.on('SIGTERM', (signal) => {
+// 	console.log('my test got it ', signal)
+// 	process.exit(2);
+// });
+// process.on('SIGQUIT', (signal) => {
+// 	console.log('my test got it ', signal)
+// 	process.exit(3);
+// });
+// console.log("Running in "+process.pid)
+// process.exit(234)
+// for(;;) {
+// 	const a: any = 1;
+// 	const b = a === 4;
+// 	await new Promise((resolve) => {
+// 		setTimeout(resolve, 100);
+// 	})
+// }
 
 // rtest("{bold styled ${'{red !styled a}'}${'{green !styled a}'} after}remaining")
 // rtest("{bold styled ${'{red !styled a}'} after}remaining")
 // rtest("{bold styled {style ${'{red !styled a}'}} after}remaining")
-
 
 // rtest("{bold styled {style { ${'{style {red styled a}}'}}${'{green !styled a}'} after}remaining")
 // rtest("{bold style \{ \\ ${'{red !style \\ a \{ { } }'} after}remaining")

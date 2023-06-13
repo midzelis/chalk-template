@@ -1,10 +1,9 @@
 import test from 'ava';
+import chalk from 'chalk';
+import chalkTemplateStdout, {chalkTemplateStderr, makeTaggedTemplate} from '../src/index.ts';
+// import chalkTemplateStdout, {chalkTemplateStderr, makeTaggedTemplate} from '../index.js';
 
-import chalk from 'chalk'
-import {chalkTemplate as chalkTemplateStdout, chalkTemplateStderr} from '../dist/index.js';
-
-
-for (const [chalkTemplate, stdio] of [[chalkTemplateStdout, 'stdout'], [chalkTemplateStderr, 'stderr']]) {
+for (const [chalkTemplate, stdio] of [[chalkTemplateStdout, 'stdout'], [chalkTemplateStderr, 'stderr'], [makeTaggedTemplate(chalk), 'chalk']]) {
 	test(`[${stdio}] return a regular string for a literal with no templates`, t => {
 		t.is(chalkTemplate`hello`, 'hello');
 	});
@@ -44,6 +43,7 @@ for (const [chalkTemplate, stdio] of [[chalkTemplateStdout, 'stdout'], [chalkTem
 	});
 
 	test(`[${stdio}] correctly parse escape in parameters (bug #177 comment 318622809)`, t => {
+		debugger
 		const string = '\\';
 		t.is(chalkTemplate`{blue ${string}}`, '\\');
 	});
@@ -53,8 +53,13 @@ for (const [chalkTemplate, stdio] of [[chalkTemplateStdout, 'stdout'], [chalkTem
 			'xylophones are foxy! xylophones are foxy!');
 	});
 
-	test(`[${stdio}] no error if extra } is found`, t => {
-		t.is(chalkTemplate`{red hi!}}`, "hi!}");
+	test(`[${stdio}] throws if an extra unescaped } is found`, t => {
+		t.throws(() => {
+			// eslint-disable-next-line no-unused-expressions
+			chalkTemplate`{red hi!}}`;
+		}, {
+			message: 'Found extraneous } in Chalk template literal',
+		});
 	});
 
 	test(`[${stdio}] should not parse upper-case escapes`, t => {

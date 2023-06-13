@@ -1,5 +1,5 @@
 import test from 'ava';
-import {chalkTemplate} from '../dist/index.js';
+import chalkTemplate from '../src/index.ts';
 
 test('correctly parse and evaluate color-convert functions', t => {
 	t.is(chalkTemplate`{bold.rgb(144,10,178).inverse Hello, {~inverse there!}}`,
@@ -13,20 +13,30 @@ test('correctly parse and evaluate color-convert functions', t => {
 		+ '\u001B[48;2;144;10;178mthere!\u001B[49m\u001B[22m');
 });
 
-test('no need to escapes', t => {
-	t.is(chalkTemplate`{bold hello \{in brackets\}}`,
-		'\x1B[1mhello \x1B[22m\x1B[1m{\x1B[22m\x1B[1min brackets\x1B[22m}');
+test('properly handle escapes', t => {
+	t.is(chalkTemplate`{bold hello \\{in brackets\\}}`,
+		'\u001B[1mhello {in brackets}\u001B[22m');
 });
 
-test('do not throw if there is an unclosed block', t => {
-	t.is(chalkTemplate`{bold this should work\}`,'\x1B[1mthis should work\x1B[22m')
-	t.is(chalkTemplate`{bold bold does not work {inverse inverse works {underline underline works\} :) \}`,'{bold bold does not work \x1B[7minverse works \x1B[27m\x1B[7m\x1B[4munderline works\x1B[24m\x1B[27m\x1B[7m :) \x1B[27m');
+test('throw if there is an unclosed block', t => {
+	t.throws(() => {
+		// eslint-disable-next-line no-unused-expressions
+		chalkTemplate`{bold this shouldn't work ever\\}`;
+	});
+
+	t.throws(() => {
+		// eslint-disable-next-line no-unused-expressions
+		chalkTemplate`{bold this shouldn't {inverse appear {underline ever\} :) \}`;
+	});
 });
 
-test('do not throw if there is an invalid style', t => {
-	t.is(
-		chalkTemplate`{abadstylethatdoesntexist this should work as unprocessed}`,
-		`{abadstylethatdoesntexist this should work as unprocessed}`);
+test('throw if there is an invalid style', t => {
+	t.throws(() => {
+		// eslint-disable-next-line no-unused-expressions
+		chalkTemplate`{abadstylethatdoesntexist this shouldn't work ever}`;
+	}, {
+		message: 'Unknown Chalk style: abadstylethatdoesntexist',
+	});
 });
 
 test('properly style multiline color blocks', t => {
@@ -48,9 +58,9 @@ test('properly style multiline color blocks', t => {
 	);
 });
 
-test('handle escape interpolated values', t => {
+test('escape interpolated values', t => {
 	t.is(chalkTemplate`Hello {bold hi}`, 'Hello \u001B[1mhi\u001B[22m');
-	t.is(chalkTemplate`Hello ${'{bold hi}'}`, 'Hello \u001B[1mhi\u001B[22m');
+	t.is(chalkTemplate`Hello ${'{bold hi}'}`, 'Hello {bold hi}');
 });
 
 test('should allow bracketed Unicode escapes', t => {

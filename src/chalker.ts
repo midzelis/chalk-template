@@ -1,29 +1,17 @@
 import type { ChalkInstance } from 'chalk';
-import type { AstNode, Style, Template } from './parser.js';
-
-function unescape(string: string, startTag = '{', endTag = '}') {
-	// return string.replaceAll(new RegExp(`(${startTag}|${endTag}){2}`, 'g'), '$1');
-	// return string.replaceAll(new RegExp(`\\{2}`, 'g'), '\\');
-	let result = '';
-	for (let i = 0; i < string.length; i++) {
-		const char = string[i];
-		if (char === '\\') result += string[++i];
-		else result += char;
-	}
-	return result;
-}
+import type { AstNode, Style, TemplateNode } from './parser.js';
 
 function configChalk(chalk: ChalkInstance, styles: Map<String, Style>) {
 	let currentChalk = chalk;
 	for (const style of styles.values()) {
-		if (style.type === 'hexstyle') {
+		if (style.style === 'hex') {
 			if (style.fghex) {
 				currentChalk = currentChalk.hex('#' + style.fghex);
 			}
 			if (style.bghex) {
 				currentChalk = currentChalk.bgHex('#' + style.bghex);
 			}
-		} else if (style.type === 'rgbstyle') {
+		} else if (style.style === 'rgb') {
 			if (style.bgRgb) {
 				const { red, green, blue } = style.bgRgb;
 				currentChalk = currentChalk.bgRgb(red, green, blue);
@@ -32,23 +20,26 @@ function configChalk(chalk: ChalkInstance, styles: Map<String, Style>) {
 				const { red, green, blue } = style.rgb;
 				currentChalk = currentChalk.rgb(red, green, blue);
 			}
-		} else if (style.type === 'textstyle') {
+		} else if (style.style === 'text') {
+			if (!currentChalk[style.value]) {
+				throw new Error(`Unknown Chalk style: ${style.value}`);
+			}
 			currentChalk = currentChalk[style.value];
 		}
 	}
 	return currentChalk;
 }
 
-export function render(chalk: ChalkInstance, node: Template): string {
+export function chalker(chalk: ChalkInstance, node: TemplateNode): string {
 	let styles = new Map<String, Style>();
 	function visitor(current: AstNode) {
 		if (current.type === 'template') return current.nodes.map(visitor).join('');
 		else if (current.type === 'text') return current.value;
-		else if (current.type === 'styletag') {
+		else if (current.type === 'tag') {
 			if (
 				current.style &&
 				current.style.length === 0 &&
-				current.style[0].type === 'textstyle' &&
+				current.style[0].style === 'text' &&
 				current.style[0].value === 'style'
 			) {
 				debugger;
@@ -64,7 +55,7 @@ export function render(chalk: ChalkInstance, node: Template): string {
 			for (const style of current.style) {
 				const { key } = style;
 				const { invert } = style;
-				if (style.type === 'textstyle' && style.value === 'style') {
+				if (style.style === 'text' && style.value === 'style') {
 					continue;
 				}
 				if (invert && styles.has(key)) {
@@ -89,7 +80,8 @@ export function render(chalk: ChalkInstance, node: Template): string {
 			}
 			for (const node of current.children) {
 				if (node.type === 'text') {
-					run += unescape(visitor(node));
+					// run += unescape(visitor(node));
+					run += visitor(node);
 				} else {
 					renderRun();
 					result += visitor(node);
