@@ -1,15 +1,16 @@
-type ConsumeWhileFunction = (char: string) =>
-	| boolean
-	| {
-			stop: boolean;
-			accept: boolean;
-			positionOffset: number;
-	  };
-
-export type State = {
+interface ConsumeWhileFunction {
+	(char: string):
+		| boolean
+		| {
+				stop: boolean;
+				accept: boolean;
+				positionOffset: number;
+		  };
+}
+export interface Position {
 	part: number;
 	partpos: number;
-};
+}
 
 let parts: string[][];
 let part: number;
@@ -17,14 +18,34 @@ let partpos: number;
 
 let cachedChar: string | undefined;
 
-export function setSource(
-	temp: ReadonlyArray<string>,
-	...args: any[]
-) {
+/**
+ * Only exposed for testing
+ */
+export function getFullState() {
+	return {
+		parts,
+		part,
+		partpos,
+		cachedChar,
+	};
+}
+
+export function setFullState(state: any) {
+	parts = state.parts;
+	part = state.part;
+	partpos = state.partpos;
+	cachedChar = state.cachedChar;
+}
+
+export function clearSource() {
 	cachedChar = undefined;
 	parts = [];
 	part = 0;
 	partpos = 0;
+}
+
+export function setSource(temp: ReadonlyArray<string>, ...args: any[]) {
+	clearSource();
 	parts.push([...temp[0]]);
 	for (let index = 1; index < temp.length; index++) {
 		if (args.length - (index - 1) < 0) {
@@ -35,33 +56,39 @@ export function setSource(
 		parts.push([...temp[index]]);
 	}
 }
+
 export function getPart() {
 	return part;
 }
+
 export function isStartOfArgument() {
 	return isArgument() && partpos === 0;
 }
+
 export function isArgument() {
 	return isOdd(part);
 }
 
-export function saveState(): State {
+export function savePosition(): Position {
 	return {
 		part,
 		partpos,
 	};
 }
-export function reset(index: State): undefined {
+
+export function resetPosition(index: Position): undefined {
 	partpos = index.partpos;
 	part = index.part;
 	return;
 }
+
 export function isEscaped() {
 	if (cachedChar === undefined) {
 		cachedChar = prevChar();
 	}
 	return cachedChar === '\\';
 }
+
 export function charAdvance() {
 	let c = char();
 	if (c === '\\' && !isEscaped()) {
@@ -75,6 +102,7 @@ export function charAdvance() {
 	adjustPos(1);
 	return (cachedChar = c);
 }
+
 export function adjustPos(amount: number): undefined {
 	let remainder = amount;
 	if (amount < 0 && cachedChar == '\\') {
@@ -105,9 +133,11 @@ export function adjustPos(amount: number): undefined {
 	}
 	return;
 }
+
 export function char() {
 	return parts[part]?.[partpos];
 }
+
 export function prevChar() {
 	const saved = { part, partpos };
 	adjustPos(-1);
@@ -116,6 +146,7 @@ export function prevChar() {
 	partpos = saved.partpos;
 	return c;
 }
+
 export function consumeRemainderOfPart() {
 	const value = parts[part]
 		.slice(partpos, parts[part].length)
@@ -123,6 +154,7 @@ export function consumeRemainderOfPart() {
 	adjustPos(value.length);
 	return value;
 }
+
 export function consumeRemainder() {
 	if (
 		part < 0 ||
@@ -131,7 +163,7 @@ export function consumeRemainder() {
 		partpos > parts[part].length - 1
 	)
 		return;
-	let chars = [];
+	let chars: string[] = [];
 	chars.push(...parts[part].slice(partpos));
 	for (let i = part + 1; i < parts.length; i++) {
 		chars.push(...parts[i]);
@@ -154,17 +186,17 @@ export function consumeNextWhitespace() {
 	return consumeWhile(nextWhiteSpace());
 }
 
-export function consume(segment: string): boolean {
-	const original = saveState();
+export function consume(segment: string): boolean | undefined {
+	const original = savePosition();
 	for (let j = 0; j < segment.length; j++) {
 		const char = charAdvance();
-		if (char !== segment[j]) return reset(original);
+		if (char !== segment[j]) return resetPosition(original);
 	}
 	return true;
 }
 
 export function consumeWhile(fn: ConsumeWhileFunction): string | undefined {
-	const original = saveState();
+	const original = savePosition();
 	let ret = '';
 
 	for (;;) {
@@ -199,6 +231,7 @@ export function consumeNumber() {
 export function consumeWhitespace() {
 	return consumeWhile(isWhitespace);
 }
+
 function isWhitespace(char: string) {
 	// prettier-ignore
 	return char === ' '
@@ -218,9 +251,11 @@ function isWhitespace(char: string) {
 		|| char === '\u3000'
 		|| char === '\ufeff'
 }
+
 function isDigit(char: string) {
 	return char >= '0' && char <= '9';
 }
+
 function isOdd(x: number): boolean {
 	return !!(x & 1);
 }
@@ -237,7 +272,7 @@ function toAbsPosition(partIdx: number = part, partposIdx: number = partpos) {
 function getErrorContextualString(isArg: boolean) {
 	const adj = 40;
 
-	const original = saveState();
+	const original = savePosition();
 	debugger;
 	// get 40 characters before and after current position
 	adjustPos(-adj);
@@ -249,7 +284,7 @@ function getErrorContextualString(isArg: boolean) {
 		if (c !== undefined) string += c;
 		adjustPos(1);
 	}
-	reset(original);
+	resetPosition(original);
 	string += '\n';
 
 	if (over < 0) {
@@ -278,6 +313,7 @@ function getErrorContextualString(isArg: boolean) {
 }
 
 export function createError(msg: string) {
+	debugger;
 	const isArg = isArgument();
 	const argNumber = isArg ? (part - 1) / 2 : -1;
 

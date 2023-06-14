@@ -2,36 +2,9 @@
 import { makeTemplate as chalkTemplateRenderer } from './index.js';
 import { Chalk } from 'chalk';
 import { inspect } from 'node:util';
-import type { AstNode, Style, TagNode, TemplateNode } from './parser.js';
+import type { AstNode, Style, TagAstNode, TemplateAstNode } from './parser.js';
+import { toString } from './stringer.js';
 
-function toString(node: TemplateNode) {
-	function styleToString(current: Style) {
-		let ret = '';
-		if (current.invert) ret += '~';
-		if (current.style === 'hex') {
-			if (current.fghex && current.bghex)
-				ret += '#' + current.fghex + ':' + current.bghex;
-			else if (current.fghex && !current.bghex) ret += '#' + current.fghex;
-			else if (!current.fghex && current.bghex) ret += '#:' + current.bghex;
-		} else if (current.style === 'rgb') {
-			const { red, green, blue } = current.rgb;
-			ret += `rgb(${red},${green},${blue})`;
-		} else if (current.style === 'text') {
-			ret += current.value;
-		}
-		return ret;
-	}
-	function visitor(current: AstNode) {
-		if (current.type === 'template') return current.nodes.map(visitor).join('');
-		else if (current.type === 'text') return current.value;
-		else if (current.type === 'tag')
-			return `${node.startTag}${current.style
-				.map(styleToString)
-				.join('.')} ${current.children.map(visitor).join('')}${node.endTag}`;
-		return '';
-	}
-	return visitor(node);
-}
 
 const debugRender = chalkTemplateRenderer(new Chalk(), { returnAstNode: true });
 

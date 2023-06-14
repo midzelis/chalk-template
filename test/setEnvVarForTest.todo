@@ -1,0 +1,30 @@
+
+function deleteModule(moduleName) {
+	let solvedName = require.resolve(moduleName);
+	let nodeModule = require.cache[solvedName];
+	if (nodeModule) {
+		for (let i = 0; i < nodeModule.children.length; i++) {
+			let child = nodeModule.children[i];
+			deleteModule(child.filename);
+		}
+		delete require.cache[solvedName];
+	}
+}
+
+test.before(() => {
+	deleteModule('chalk');
+	deleteModule('../src/index.ts');
+	process.env['FORCE_COLOR']='3'
+})
+
+test.beforeEach(t => {
+	const index = require('../src/index.ts');
+	if (t.title.includes('[stdout]')) {
+		t.context.template = index.template;
+	} else if (t.title.includes('[stderr]')) {
+		t.context.template = index.templateStderr;
+	} else if (t.title.includes('[chalk')) {
+		const chalk = require('chalk').default;
+		t.context.template = index.makeTemplate(chalk);
+	}
+});

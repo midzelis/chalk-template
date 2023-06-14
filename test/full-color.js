@@ -22,11 +22,15 @@ test('throw if there is an unclosed block', t => {
 	t.throws(() => {
 		// eslint-disable-next-line no-unused-expressions
 		chalkTemplate`{bold this shouldn't work ever\\}`;
+	}, {
+		message: 'Expected }\nParsing: Tagged Template String\nOffset: 32\n{bold this shouldn\'t work ever\\}\n--------------------------------^',
 	});
 
 	t.throws(() => {
 		// eslint-disable-next-line no-unused-expressions
 		chalkTemplate`{bold this shouldn't {inverse appear {underline ever\} :) \}`;
+	}, {
+		message: 'Expected }\nParsing: Tagged Template String\nOffset: 58\n…\'t {inverse appear {underline ever} :) }\n…----------------------------------------^',
 	});
 });
 

@@ -1,10 +1,10 @@
 import { type ChalkInstance } from 'chalk';
-import { parse, type ParserOptions, type TemplateNode } from './parser.js';
+import { parse, type ParserOptions, type TemplateAstNode } from './parser.js';
 import { chalker } from './chalker.js';
 
 export type ChalkedResult = {
 	rendered: String;
-	ast: TemplateNode;
+	ast: TemplateAstNode;
 };
 
 export type DrawResult = string | ChalkedResult;
@@ -18,7 +18,7 @@ export function drawer(chalk: ChalkInstance, options?: DrawOptions) {
 		arg: TemplateStringsArray | any,
 		...args: any[]
 	): DrawResult {
-		let parser: () => TemplateNode;
+		let parser: () => TemplateAstNode;
 		if (Array.isArray(arg) && 'raw' in arg) {
 			parser = () => parse(options, arg, ...args);
 		} else {

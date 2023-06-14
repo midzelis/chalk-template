@@ -1,5 +1,5 @@
 import type { ChalkInstance } from 'chalk';
-import type { AstNode, Style, TemplateNode } from './parser.js';
+import type { AstNode, Style, TemplateAstNode } from './parser.js';
 
 function configChalk(chalk: ChalkInstance, styles: Map<String, Style>) {
 	let currentChalk = chalk;
@@ -22,6 +22,7 @@ function configChalk(chalk: ChalkInstance, styles: Map<String, Style>) {
 			}
 		} else if (style.style === 'text') {
 			if (!currentChalk[style.value]) {
+				debugger;
 				throw new Error(`Unknown Chalk style: ${style.value}`);
 			}
 			currentChalk = currentChalk[style.value];
@@ -30,7 +31,7 @@ function configChalk(chalk: ChalkInstance, styles: Map<String, Style>) {
 	return currentChalk;
 }
 
-export function chalker(chalk: ChalkInstance, node: TemplateNode): string {
+export function chalker(chalk: ChalkInstance, node: TemplateAstNode): string {
 	let styles = new Map<String, Style>();
 	function visitor(current: AstNode) {
 		if (current.type === 'template') return current.nodes.map(visitor).join('');

@@ -1,7 +1,6 @@
 import test from 'ava';
 import chalk from 'chalk';
 import chalkTemplateStdout, {chalkTemplateStderr, makeTaggedTemplate} from '../src/index.ts';
-// import chalkTemplateStdout, {chalkTemplateStderr, makeTaggedTemplate} from '../index.js';
 
 for (const [chalkTemplate, stdio] of [[chalkTemplateStdout, 'stdout'], [chalkTemplateStderr, 'stderr'], [makeTaggedTemplate(chalk), 'chalk']]) {
 	test(`[${stdio}] return a regular string for a literal with no templates`, t => {
@@ -43,7 +42,6 @@ for (const [chalkTemplate, stdio] of [[chalkTemplateStdout, 'stdout'], [chalkTem
 	});
 
 	test(`[${stdio}] correctly parse escape in parameters (bug #177 comment 318622809)`, t => {
-		debugger
 		const string = '\\';
 		t.is(chalkTemplate`{blue ${string}}`, '\\');
 	});
@@ -55,7 +53,6 @@ for (const [chalkTemplate, stdio] of [[chalkTemplateStdout, 'stdout'], [chalkTem
 
 	test(`[${stdio}] throws if an extra unescaped } is found`, t => {
 		t.throws(() => {
-			debugger;
 			// eslint-disable-next-line no-unused-expressions
 			chalkTemplate`{red hi!}}`;
 		}, {

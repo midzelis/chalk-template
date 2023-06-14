@@ -10,45 +10,46 @@ import {
 	isEscaped,
 	isStartOfArgument,
 	consumeRemainder,
-	reset,
-	saveState,
+	resetPosition,
+	savePosition,
 	setSource,
 	consumeRemainderOfPart,
 	createError,
+	clearSource,
 } from './source.js';
-import { type State } from './source.js';
+import { type resetPosition } from './source.js';
 
-export interface TemplateNode {
+export interface TemplateAstNode {
 	type: 'template';
 	nodes: AstNode[];
 	startTag: string;
 	endTag: string;
 }
 
-export interface TagNode {
+export interface TagAstNode {
 	type: 'tag';
 	style: Style[];
-	children: StyleTagChild[];
+	children: (TagAstNode | TextAstNode)[];
 }
-export interface TextNode {
+export interface TextAstNode {
 	type: 'text';
 	value: string;
 }
 
-export type AstNode = TemplateNode | TagNode | TextNode;
-
-export type StyleTagChild = TagNode | TextNode;
+export type AstNode = TemplateAstNode | TagAstNode | TextAstNode;
 export interface Keyed {
 	key: string;
 }
-export interface TextStyle extends Keyed {
+
+export interface Invertable {
+	invert: boolean | undefined
+}
+export interface TextStyle extends Invertable,Keyed {
 	style: 'text';
-	invert: boolean;
 	value: string;
 }
-export interface RgbStyle extends Keyed {
+export interface RgbStyle extends Invertable,Keyed {
 	style: 'rgb';
-	invert: boolean;
 	rgb?: RGB;
 	bgRgb?: RGB;
 }
@@ -57,11 +58,10 @@ export interface RGB {
 	green: number;
 	blue: number;
 }
-export interface HexStyle extends Keyed {
+export interface HexStyle extends Invertable,Keyed {
 	style: 'hex';
-	invert: boolean;
-	fghex: string | false;
-	bghex: string | false;
+	fghex: string | undefined;
+	bghex: string | undefined;
 }
 
 export type Style = TextStyle | RgbStyle | HexStyle;
@@ -91,7 +91,7 @@ export type ParserOptions = {
 };
 
 type StyleAndPosition = {
-	position: State;
+	position: Position;
 	styleStack: boolean[];
 };
 
@@ -100,26 +100,34 @@ let endTag: string;
 let styleStack: boolean[];
 let compat: boolean;
 let strict: boolean;
-export function parse(
-	options: ParserOptions = {},
-	temp: ReadonlyArray<string>,
-	...args: any[]
-): TemplateNode {
+
+function init(options: ParserOptions = {}) {
 	startTag = options.startTag || '{';
 	endTag = options.endTag || '}';
 	strict = options.strict || false;
 	compat = options.compat || false;
 	styleStack = [];
-	debugger;
-	setSource(temp, ...args);
-	const nodes = parseNodes();
-	startTag = endTag = styleStack = undefined;
-	return {
-		type: 'template',
-		nodes,
-		startTag,
-		endTag,
-	};
+}
+
+export function parse(
+	options: ParserOptions = {},
+	temp: ReadonlyArray<string>,
+	...args: any[]
+): TemplateAstNode {
+	try {
+		init(options);
+		setSource(temp, ...args);
+		const nodes = parseNodes();
+		return {
+			type: 'template',
+			nodes,
+			startTag,
+			endTag,
+		};
+	} finally {
+		init();
+		clearSource();
+	}
 }
 
 function parseNodes(): AstNode[] {
@@ -168,19 +176,19 @@ function parseNodes(): AstNode[] {
 	return nodes;
 }
 
-function parseNode(): TagNode | TextNode | undefined {
+function parseNode(): TagAstNode | TextAstNode | undefined {
 	// directly check for escaped here
 	return parseChalkTemplate() ?? parseText();
 }
 
 function saveStateAndStyleStack(): StyleAndPosition {
 	return {
-		position: saveState(),
+		position: savePosition(),
 		styleStack: [...styleStack],
 	};
 }
 function restoreStateAndStyleStack(state: StyleAndPosition): undefined {
-	reset(state.position);
+	resetPosition(state.position);
 	styleStack = state.styleStack;
 	return;
 }
@@ -189,13 +197,13 @@ function error(msg, cb) {
 	return cb();
 }
 
-function parseChalkTemplate(): TagNode | undefined {
+function parseChalkTemplate(): TagAstNode | undefined {
 	// this is an escaped arg
 	if (isArgument() && !styleStack[styleStack.length - 1]) return;
 
 	const original = saveStateAndStyleStack();
-	let body: StyleTagChild[] = [];
-	let style: Style[] | false;
+	let body: (TagAstNode | TextAstNode)[] = [];
+	let style: Style[] | undefined;
 	if (consumeStartTag()) {
 		style = parseStyles();
 		if (!style)
@@ -233,20 +241,20 @@ function parseChalkTemplate(): TagNode | undefined {
 }
 
 function consumeStartTag() {
-	const original = saveState();
+	const original = savePosition();
 	const consumed = consume(startTag);
-	if (consumed && isEscaped()) return reset(original);
+	if (consumed && isEscaped()) return resetPosition(original);
 	return consumed;
 }
 
 function consumeEndTag() {
-	const original = saveState();
+	const original = savePosition();
 	const consumed = consume(endTag);
-	if (consumed && isEscaped()) return reset(original);
+	if (consumed && isEscaped()) return resetPosition(original);
 	return consumed;
 }
 
-function parseText(): TextNode | undefined {
+function parseText(): TextAstNode | undefined {
 	if (isArgument() && !styleStack[styleStack.length - 1]) {
 		const value = consumeRemainderOfPart();
 		return {
@@ -298,7 +306,7 @@ function parseText(): TextNode | undefined {
 }
 
 function parseStyles(): Style[] | undefined {
-	const original = saveState();
+	const original = savePosition();
 	const styles: Style[] = [];
 	for (;;) {
 		const invert = consume('~');
@@ -315,7 +323,7 @@ function parseStyles(): Style[] | undefined {
 	// There must be whitespace following the style, to delineate end of style
 	// If the whitespace is ' ', then it is swallowed, otherwise it is preserved
 	const nextSpace = consumeNextWhitespace();
-	if (!nextSpace) return reset(original);
+	if (!nextSpace) return resetPosition(original);
 	if (nextSpace !== ' ') {
 		adjustPos(-1);
 	}
@@ -324,17 +332,17 @@ function parseStyles(): Style[] | undefined {
 }
 
 function parseHexStyle(invert: boolean | undefined): HexStyle | undefined {
-	const original = saveState();
+	const original = savePosition();
 	const hash = consume('#');
 	if (hash) {
 		const fghex = consumeWhile((char) => /[0-9a-fA-F]/.test(char));
 		let bghex: string | undefined;
 		if (consume(':')) {
 			bghex = consumeWhile((char) => /[0-9a-fA-F]/.test(char));
-			if (!bghex) return reset(original);
+			if (!bghex) return resetPosition(original);
 		} else {
 			// no seperator, that means there must be a foreground value
-			if (!fghex) return reset(original);
+			if (!fghex) return resetPosition(original);
 		}
 		return addKey({
 			style: 'hex',
@@ -349,28 +357,28 @@ function parseRgbStyle(
 	invert: boolean | undefined,
 	kind: 'rgb' | 'bgRgb'
 ): RgbStyle | undefined {
-	const original = saveState();
+	const original = savePosition();
 	const rgb = consume(kind);
 	if (rgb) {
 		consumeWhitespace();
 		const lparen = consume('(');
-		if (!lparen) reset(original);
+		if (!lparen) resetPosition(original);
 		consumeWhitespace();
 		const red = consumeNumber();
-		if (!red) reset(original);
+		if (!red) resetPosition(original);
 		consumeWhitespace();
 		consume(',');
 		consumeWhitespace();
 		const green = consumeNumber();
-		if (!green) reset(original);
+		if (!green) resetPosition(original);
 		consumeWhitespace();
 		consume(',');
 		consumeWhitespace();
 		const blue = consumeNumber();
-		if (!blue) reset(original);
+		if (!blue) resetPosition(original);
 		consumeWhitespace();
 		const rparen = consume(')');
-		if (!rparen) reset(original);
+		if (!rparen) resetPosition(original);
 		return addKey({
 			style: 'rgb',
 			invert,
@@ -384,10 +392,10 @@ function parseRgbStyle(
 	return;
 }
 
-function parseTextStyle(invert: boolean | undefined): TextStyle | false {
-	const original = saveState();
+function parseTextStyle(invert: boolean | undefined): TextStyle | undefined {
+	const original = savePosition();
 	const style = consumeWhile((char) => /[^\s\\.]/.test(char));
-	if (!style) return reset(original);
+	if (!style) return resetPosition(original);
 	return addKey({
 		style: 'text',
 		invert,

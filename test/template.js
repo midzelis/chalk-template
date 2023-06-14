@@ -4,7 +4,6 @@ import {template as templateStdout, templateStderr, makeTemplate} from '../src/i
 
 for (const [template, stdio] of [[templateStdout, 'stdout'], [templateStderr, 'stderr'], [makeTemplate(chalk), 'chalk']]) {
 	test(`[${stdio}] correctly parse and evaluate color-convert functions`, t => {
-		debugger
 		t.is(template('{bold.rgb(144,10,178).inverse Hello, {~inverse there!}}'),
 			'\u001B[1m\u001B[38;2;144;10;178m\u001B[7mHello, '
 			+ '\u001B[27m\u001B[39m\u001B[22m\u001B[1m'
@@ -24,10 +23,14 @@ for (const [template, stdio] of [[templateStdout, 'stdout'], [templateStderr, 's
 	test(`[${stdio}] throw if there is an unclosed block`, t => {
 		t.throws(() => {
 			template('{bold this shouldn\'t work ever\\}');
+		}, {
+			message: 'Expected }\nParsing: Tagged Template String\nOffset: 32\n{bold this shouldn\'t work ever\\}\n--------------------------------^',
 		});
 
 		t.throws(() => {
 			template('{bold this shouldn\'t {inverse appear {underline ever\\} :) \\}');
+		}, {
+			message: 'Expected }\nParsing: Tagged Template String\nOffset: 60\n… {inverse appear {underline ever\\} :) \\}\n…----------------------------------------^',
 		});
 	});
 
